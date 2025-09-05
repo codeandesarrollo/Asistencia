@@ -309,6 +309,12 @@
     }
   }
 
+  /* ========= Ajuste CORS / file:// ========= */
+  const API_BASE =
+    (location.protocol === 'file:' || location.origin === 'null')
+      ? 'https://asistencia-sage.vercel.app'
+      : (location.host.includes('asistencia-sage.vercel.app') ? '' : 'https://asistencia-sage.vercel.app');
+
   // === Exportación a Excel (gráficas nativas, vía API /api/export-excel) ===
   async function exportExcel(){
     try{
@@ -326,26 +332,28 @@
         perAlumno: lastAgg.perAlumno
       };
 
-      const resp = await fetch('/api/export-excel', {
+      const url = `${API_BASE}/api/export-excel`;
+      const resp = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type':'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        mode: 'cors',
+        credentials: 'omit'
       });
 
       if(!resp.ok){
-        const t = await resp.text();
-        throw new Error('Error exportando: ' + t);
+        const t = await resp.text().catch(()=> '');
+        throw new Error(`Error exportando (${resp.status}): ${t || 'sin cuerpo'}`);
       }
 
       const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
+      a.href = URL.createObjectURL(blob);
       a.download = `Asistencia_${sid}_${gid}_${lastAgg.ym}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      setTimeout(()=> URL.revokeObjectURL(a.href), 0);
     }catch(err){
       console.error(err);
       alert('No se pudo generar el Excel (nativo). Revisa la consola.');
