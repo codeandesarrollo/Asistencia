@@ -2,5 +2,6 @@
   "type": "module",
   "dependencies": {
     "xlsx-populate": "^1.21.0"
-  }
+  },
+  "engines": { "node": ">=18" }
 }
