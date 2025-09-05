@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Grupo · Opciones</title>
+<style>
+  :root{ --primary:#4A90E2; --dark:#1e2740; --card:#ffffff; --txt:#2b2f36 }
+  *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,Segoe UI,Roboto,sans-serif}
+  body{background:#f5f6fb;color:var(--txt)}
+  header{background:linear-gradient(135deg,var(--primary),#2E5FAA);color:#fff;padding:18px 0;text-align:center}
+  .container{max-width:900px;margin:0 auto;padding:22px}
+  .pill{display:inline-block;background:#ffffff22;border:1px solid #ffffff55;color:#fff;padding:6px 10px;border-radius:999px;font-size:13px}
+  .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:14px}
+  @media (max-width:900px){ .grid{grid-template-columns:1fr} }
+  .card{background:var(--card);border-radius:14px;padding:22px;border:1px solid #e6ebf3;box-shadow:0 6px 18px rgba(0,0,0,.05)}
+  .opt{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:26px;border:2px dashed #dbe3f1;border-radius:16px;gap:10px;transition:.2s}
+  .opt:hover{border-color:var(--primary);transform:translateY(-2px)}
+  .opt a{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--primary),#2E5FAA);color:#fff;text-decoration:none;padding:10px 16px;border-radius:10px;font-weight:600}
+  .opt.disabled{opacity:.5;pointer-events:none}
+  .opt .emoji{font-size:40px}
+  .row{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+  .btn{display:inline-flex;gap:8px;align-items:center;padding:8px 12px;border:1px solid #fff3;border-radius:10px;color:#fff;text-decoration:none}
+  .btn-home{border-color:#2E5FAA;background:linear-gradient(135deg,#2E5FAA,#4A90E2)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Grupo · Opciones</h1>
+  <p id="ctx" class="pill"></p>
+</header>
+
+<div class="container">
+  <div class="card">
+    <div class="row">
+      <div>Selecciona una opción</div>
+      <!-- Botón Regresar -->
+      <a id="btnHome" class="btn btn-home" href="escuela.html">← Regresar</a>
+    </div>
+
+    <div class="grid">
+      <!-- SUBIR LISTA -->
+      <div class="opt" id="optSubir">
+        <div class="emoji">📤</div>
+        <h3>Subir lista</h3>
+        <p>Importa alumnos desde Excel/CSV.</p>
+        <a id="linkSubir" href="#">Ir a Subir lista →</a>
+      </div>
+
+      <!-- ASISTENCIA -->
+      <div class="opt" id="optAsis">
+        <div class="emoji">🗓️</div>
+        <h3>Asistencia</h3>
+        <p>Tomar asistencia del grupo.</p>
+        <a id="linkAsis" href="#">Ir a Tomar Asistencia →</a>
+      </div>
+
+      <!-- CALIFICACIONES (disabled por ahora) -->
+      <div class="opt disabled">
+        <div class="emoji">📝</div>
+        <h3>Calificaciones</h3>
+        <p>Próximamente</p>
+        <a href="#">Abrir</a>
+      </div>
+
+      <!-- GRÁFICOS ASISTENCIA (nuevo) -->
+      <div class="opt" id="optGraf">
+        <div class="emoji">📊</div>
+        <h3>Gráficos Asistencia</h3>
+        <p>Ver estadísticas del grupo.</p>
+        <a id="linkGraf" href="#">Ver Gráficos →</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Pasar sid & gid en los links
+  const p = new URLSearchParams(location.search);
+  const sid = p.get('sid'); 
+  const gid = p.get('gid');
+
+  if(!sid || !gid){
+    alert('Falta sid o gid en la URL');
+    location.href = './escuelas.html';
+  }
+
+  document.getElementById('ctx').textContent = `Escuela: ${sid} · Grupo: ${gid}`;
+
+  document.getElementById('linkSubir').href = `./subirlista.html?sid=${encodeURIComponent(sid)}&gid=${encodeURIComponent(gid)}`;
+  document.getElementById('linkAsis').href  = `./tomarlista.html?sid=${encodeURIComponent(sid)}&gid=${encodeURIComponent(gid)}`;
+  document.getElementById('linkGraf').href  = `./graficos.html?sid=${encodeURIComponent(sid)}&gid=${encodeURIComponent(gid)}`;
+</script>
+</body>
+</html>

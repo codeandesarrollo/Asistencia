@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Tomar asistencia</title>
+<style>
+  :root{ --primary:#4A90E2; --success:#28a745; --warning:#ffc107; --danger:#dc3545; }
+  *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,Segoe UI,Roboto,sans-serif}
+  body{background:#f5f6fb;color:#2b2f36}
+  header{background:linear-gradient(135deg,var(--primary),#2E5FAA);color:#fff;padding:18px 0;text-align:center}
+  .container{max-width:900px;margin:0 auto;padding:22px}
+  .card{background:#fff;border-radius:14px;padding:22px;border:1px solid #e6ebf3;box-shadow:0 6px 18px rgba(0,0,0,.05);margin-top:12px}
+  .row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  .form-control{padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px}
+  .legend{display:flex;gap:12px;align-items:center;font-size:14px;color:#445}
+  .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+  .p{background:var(--success)} .t{background:var(--warning)} .a{background:var(--danger)}
+  .attendance-row{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #eee}
+  .radio-group{display:flex;gap:8px}
+  .radio-group input{display:none}
+  .radio-group label{padding:6px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:14px}
+  .radio-group input:checked+label{background:var(--primary);color:#fff;border-color:var(--primary)}
+  .btn{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--primary),#2E5FAA);color:#fff;text-decoration:none;padding:10px 16px;border-radius:10px;font-weight:600;border:none;cursor:pointer}
+  .btn-outline{background:transparent;color:var(--primary);border:1px solid var(--primary)}
+  .msg{margin-top:12px;padding:10px;border-radius:8px;font-size:14px}
+  .ok{background:#d4edda;color:#155724;border:1px solid #c3e6cb}
+  .err{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb}
+</style>
+</head>
+<body>
+<header>
+  <h1>Tomar asistencia</h1>
+  <p id="ctx"></p>
+</header>
+
+<div class="container">
+  <div class="card">
+    <div class="row">
+      <div>
+        <label for="fechaAsis">Fecha:</label>
+        <input id="fechaAsis" type="date" class="form-control"/>
+        <div class="legend" style="margin-top:6px">
+          <span class="dot p"></span> A = Asistencia &nbsp;&nbsp;
+          <span class="dot t"></span> R = Retardo &nbsp;&nbsp;
+          <span class="dot a"></span> F = Falta
+        </div>
+      </div>
+      <div style="margin-left:auto">
+        <a id="btnBack" class="btn-outline btn" href="opcionesgrupo.html">← Regresar</a>
+      </div>
+    </div>
+
+    <div id="asisList">
+      <p>Cargando alumnos...</p>
+    </div>
+
+    <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+      <button id="markAllA" class="btn">✓ Todos A (asistencia)</button>
+      <button id="markAllF" class="btn-outline btn">✗ Todos F (falta)</button>
+      <button id="saveAsis" class="btn" style="margin-left:auto">💾 Guardar asistencia</button>
+    </div>
+
+    <div id="msg" class="msg" style="display:none"></div>
+  </div>
+</div>
+
+<!-- Firebase -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getFirestore, collection, getDocs, getDoc, setDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  // Config Firebase
+  const firebaseConfig = {
+    apiKey: "AIzaSyBEIeZz3HeU-8EVirVx9JAYnGbBegh1Uh4",
+    authDomain: "maestros-7faa6.firebaseapp.com",
+    projectId: "maestros-7faa6",
+    storageBucket: "maestros-7faa6.firebasestorage.app",
+    messagingSenderId: "328284079222",
+    appId: "1:328284079222:web:f0ab5c3443469d145d4b57",
+    measurementId: "G-YKBQD9EJH3"
+  };
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+
+  // Contexto
+  const p = new URLSearchParams(location.search);
+  const sid = p.get('sid');
+  const gid = p.get('gid');
+  if(!sid || !gid){ alert('Falta sid o gid'); location.href='./index.html'; }
+
+  document.getElementById('ctx').textContent = `Escuela: ${sid} · Grupo: ${gid}`;
+  document.getElementById('btnBack').href = `opcionesgrupo.html?sid=${encodeURIComponent(sid)}&gid=${encodeURIComponent(gid)}`;
+
+  const fechaAsis = document.getElementById('fechaAsis');
+  const asisList = document.getElementById('asisList');
+  const msg = document.getElementById('msg');
+  const markAllA = document.getElementById('markAllA'); // Asistencia
+  const markAllF = document.getElementById('markAllF'); // Falta
+  const saveAsis = document.getElementById('saveAsis');
+
+  function todayStr(){ return new Date().toISOString().slice(0,10); }
+  fechaAsis.value = todayStr();
+
+  let alumnos = []; // [{id,name}]
+  let asistencia = {}; // { id: 'A'|'F'|'R' }  // A=Asistencia, F=Falta, R=Retardo
+
+  function showMsg(text,kind='ok'){
+    msg.style.display='block';
+    msg.className = `msg ${kind==='ok'?'ok':'err'}`;
+    msg.textContent = text;
+    setTimeout(()=>msg.style.display='none',3200);
+  }
+
+  async function loadAlumnos(){
+    alumnos = [];
+    const snap = await getDocs(collection(db,'escuelas',sid,'grupos',gid,'alumnos'));
+    snap.forEach(d=>{
+      const it={id:d.id,...d.data()};
+      alumnos.push({id:it.id,name:it.name||''});
+    });
+  }
+
+  function renderAsis(){
+    if(!alumnos.length){
+      asisList.innerHTML = "<p>No hay alumnos en este grupo.</p>";
+      return;
+    }
+    asisList.innerHTML = '';
+    alumnos.forEach(a=>{
+      const row=document.createElement('div');
+      row.className='attendance-row';
+      row.innerHTML=`
+        <div>${a.name}</div>
+        <div class="radio-group">
+          <input type="radio" name="r-${a.id}" id="rA-${a.id}" ${asistencia[a.id]==='A'?'checked':''}>
+          <label for="rA-${a.id}">A</label>
+          <input type="radio" name="r-${a.id}" id="rR-${a.id}" ${asistencia[a.id]==='R'?'checked':''}>
+          <label for="rR-${a.id}">R</label>
+          <input type="radio" name="r-${a.id}" id="rF-${a.id}" ${asistencia[a.id]==='F'?'checked':''}>
+          <label for="rF-${a.id}">F</label>
+        </div>
+      `;
+      asisList.appendChild(row);
+      row.querySelector(`#rA-${a.id}`).addEventListener('change',()=>asistencia[a.id]='A');
+      row.querySelector(`#rR-${a.id}`).addEventListener('change',()=>asistencia[a.id]='R');
+      row.querySelector(`#rF-${a.id}`).addEventListener('change',()=>asistencia[a.id]='F');
+    });
+  }
+
+  async function loadAsistenciaForDate(dateId){
+    // Por defecto todos en 'A'
+    asistencia = {};
+    alumnos.forEach(a=> asistencia[a.id] = 'A');
+
+    try{
+      const ref = doc(db,'escuelas',sid,'grupos',gid,'asistencias',dateId);
+      const snap = await getDoc(ref);
+      if(snap.exists()){
+        const data = snap.data();
+        const registros = data?.registros || {};
+        // Sobrescribe con lo guardado
+        for(const [alumnoId, estado] of Object.entries(registros)){
+          if(asistencia.hasOwnProperty(alumnoId)){
+            const v = String(estado || 'A').toUpperCase();
+            asistencia[alumnoId] = (v==='A'||v==='F'||v==='R') ? v : 'A';
+          }
+        }
+        renderAsis();
+        showMsg(`Asistencia del ${dateId} cargada.`, 'ok');
+      }else{
+        renderAsis();
+        showMsg(`Sin registro previo para ${dateId}.`, 'ok');
+      }
+    }catch(err){
+      console.error(err);
+      renderAsis();
+      showMsg('No se pudo cargar la asistencia guardada.', 'err');
+    }
+  }
+
+  markAllA.addEventListener('click',()=>{
+    alumnos.forEach(a=>asistencia[a.id]='A');
+    renderAsis();
+  });
+  markAllF.addEventListener('click',()=>{
+    alumnos.forEach(a=>asistencia[a.id]='F');
+    renderAsis();
+  });
+
+  // Cambiar de día: cargar si hay datos guardados para esa fecha
+  fechaAsis.addEventListener('change',()=>{
+    const dateId = fechaAsis.value || todayStr();
+    loadAsistenciaForDate(dateId);
+  });
+
+  saveAsis.addEventListener('click',async()=>{
+    if(!alumnos.length){ showMsg('No hay alumnos para guardar.','err'); return; }
+    const dateId = fechaAsis.value || todayStr();
+    const registros={};
+    alumnos.forEach(a=> registros[a.id]=asistencia[a.id]||'A' );
+    try{
+      await setDoc(
+        doc(db,'escuelas',sid,'grupos',gid,'asistencias',dateId),
+        { date:dateId, registros, updatedAt:serverTimestamp() },
+        { merge:true } // permite actualizar sin borrar metadatos previos
+      );
+      showMsg('Asistencia del día guardada correctamente ✔');
+    }catch(e){
+      console.error(e);
+      showMsg('Error al guardar asistencia','err');
+    }
+  });
+
+  // Init: cargar alumnos y después asistencia del día seleccionado
+  (async ()=>{
+    await loadAlumnos();
+    await loadAsistenciaForDate(fechaAsis.value || todayStr());
+  })();
+</script>
+</body>
+</html>

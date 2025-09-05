@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Subir lista de alumnos</title>
+<style>
+  :root{ --primary:#4A90E2; --txt:#2b2f36 }
+  *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,Segoe UI,Roboto,sans-serif}
+  body{background:#f5f6fb;color:var(--txt)}
+  header{background:linear-gradient(135deg,var(--primary),#2E5FAA);color:#fff;padding:18px 0;text-align:center}
+  .container{max-width:900px;margin:0 auto;padding:22px}
+  .card{background:#fff;border-radius:14px;padding:22px;border:1px solid #e6ebf3;box-shadow:0 6px 18px rgba(0,0,0,.05);margin-top:12px}
+  .filebox{border:2px dashed #dbe3f1;padding:24px;border-radius:14px;text-align:center;background:#fafcff;transition:.2s}
+  .filebox.highlight{border-color:var(--primary);background:#f1f6ff}
+  .btn{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--primary),#2E5FAA);color:#fff;text-decoration:none;padding:10px 16px;border-radius:10px;font-weight:600;border:none;cursor:pointer}
+  .btn-outline{background:transparent;color:var(--primary);border:1px solid var(--primary)}
+  .topbar{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 0}
+  .msg{margin-top:12px;padding:12px;border-radius:10px;font-size:14px;border:1px solid transparent}
+  .ok{background:#d4edda;color:#155724;border-color:#c3e6cb}
+  .err{background:#f8d7da;color:#721c24;border-color:#f5c6cb}
+  .info{background:#d1ecf1;color:#0c5460;border-color:#bee5eb}
+  .actions{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<header>
+  <h1>Subir lista de alumnos</h1>
+</header>
+
+<div class="container">
+  <div class="topbar">
+    <a id="btnBack" class="btn btn-outline" href="#">← Regresar</a>
+  </div>
+
+  <div class="card">
+    <div id="drop" class="filebox">
+      <p style="font-size:44px;margin-bottom:6px">📄</p>
+      <p>Arrastra tu archivo Excel/CSV o</p>
+      <label for="file" class="btn">Seleccionar archivo</label>
+      <input id="file" type="file" accept=".xlsx,.xls,.csv" style="display:none" />
+      <p style="color:#5f6b7a;margin-top:6px;font-size:13px">
+        Se importará automáticamente detectando la <b>columna de nombres</b>.
+      </p>
+    </div>
+
+    <div id="msg" class="msg info" style="display:none;"></div>
+  </div>
+</div>
+
+<!-- SheetJS -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<!-- Firebase Firestore -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getFirestore, collection, addDoc, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  // Config
+  const firebaseConfig = {
+    apiKey: "AIzaSyBEIeZz3HeU-8EVirVx9JAYnGbBegh1Uh4",
+    authDomain: "maestros-7faa6.firebaseapp.com",
+    projectId: "maestros-7faa6",
+    storageBucket: "maestros-7faa6.firebasestorage.app",
+    messagingSenderId: "328284079222",
+    appId: "1:328284079222:web:f0ab5c3443469d145d4b57",
+    measurementId: "G-YKBQD9EJH3"
+  };
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+
+  // Contexto + botones
+  const p = new URLSearchParams(location.search);
+  const sid = p.get('sid');
+  const gid = p.get('gid');
+
+  // Ir a tomar asistencia cuando termine
+  const tomarURL = `tomarlista.html?sid=${encodeURIComponent(sid||'')}&gid=${encodeURIComponent(gid||'')}`;
+  // Regresar al menú del grupo
+  const btnBack = document.getElementById('btnBack');
+  btnBack.href = `opcionesgrupo.html?sid=${encodeURIComponent(sid||'')}&gid=${encodeURIComponent(gid||'')}`;
+
+  // UI
+  const drop = document.getElementById('drop');
+  const file = document.getElementById('file');
+  const msg  = document.getElementById('msg');
+
+  function showMsg(html, kind='info'){
+    msg.style.display='block';
+    msg.className = `msg ${kind==='ok'?'ok':kind==='err'?'err':'info'}`;
+    msg.innerHTML = html; // permitimos botón/enlaces
+  }
+
+  if(!sid || !gid){
+    showMsg('Faltan parámetros (?sid y ?gid). La importación está deshabilitada.','err');
+  }
+
+  // Drag & drop visual correcto
+  ['dragenter','dragover'].forEach(ev=>{
+    drop.addEventListener(ev, (e)=>{ e.preventDefault(); e.stopPropagation(); drop.classList.add('highlight'); }, false);
+  });
+  ['dragleave','drop'].forEach(ev=>{
+    drop.addEventListener(ev, (e)=>{ e.preventDefault(); e.stopPropagation(); drop.classList.remove('highlight'); }, false);
+  });
+  drop.addEventListener('drop', e=>{ const files = e.dataTransfer.files; if(files && files.length) handleFile(files[0]); });
+  file.addEventListener('change', e=>{ if(e.target.files.length) handleFile(e.target.files[0]); });
+
+  // ---------- Detección de columna "Nombre" ----------
+  const NAME_HEADER_RE = /^(nombre|nombres|alumno|alumna|estudiante|name|apellidos|apellido|full\s*name)$/i;
+  const LETTER_RE = /[A-Za-zÁÉÍÓÚÑÜáéíóúñü]/;
+
+  function isLikelyName(val){
+    if(val == null) return false;
+    const s = String(val).trim();
+    if(!s) return false;
+    // Debe contener letras (no solo dígitos/símbolos)
+    if(!LETTER_RE.test(s)) return false;
+    // Si más del 70% son dígitos, probablemente no es nombre
+    const digits = (s.match(/[0-9]/g)||[]).length;
+    if(digits / s.length > 0.7) return false;
+    // Demasiado corto (1 char) suele ser inicial/código
+    if(s.length < 2) return false;
+    return true;
+  }
+
+  // Devuelve el índice de la mejor columna candidata a "nombre"
+  function detectNameColumn(rows2D){
+    if(!rows2D.length) return 0;
+    const headers = rows2D[0] || [];
+    // 1) Preferir encabezado conocido
+    let bestByHeader = -1;
+    headers.forEach((h,idx)=>{
+      if(typeof h === 'string' && NAME_HEADER_RE.test(h.trim())) bestByHeader = idx;
+    });
+    if(bestByHeader >= 0) return bestByHeader;
+
+    // 2) Scoring por contenido de "tipo nombre" en primeras N filas
+    const sampleStart = 0; // si hay encabezado, la fila 0 será header; igual sirve
+    const sampleEnd = Math.min(rows2D.length, 50); // 50 filas de muestra
+    const colCount = Math.max(...rows2D.map(r=>r.length));
+    let bestIdx = 0, bestScore = -1;
+
+    for(let c=0;c<colCount;c++){
+      let score = 0;
+      for(let r=sampleStart;r<sampleEnd;r++){
+        const val = rows2D[r]?.[c];
+        if(isLikelyName(val)) score++;
+      }
+      if(score > bestScore){
+        bestScore = score; bestIdx = c;
+      }
+    }
+    return bestIdx;
+  }
+  // -----------------------------------------------
+
+  async function handleFile(f){
+    if(!sid || !gid){ showMsg('No se puede importar sin ?sid y ?gid en la URL.','err'); return; }
+    try{
+      showMsg('Leyendo archivo…','info');
+      const ab = await f.arrayBuffer();
+      const wb = XLSX.read(ab, {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const arr = XLSX.utils.sheet_to_json(ws, {header:1, raw:true}); // [[c0,c1,..], ...]
+      if(!arr.length){ showMsg('El archivo está vacío.','err'); return; }
+
+      // Detectar la columna que parece "nombres"
+      const nameCol = detectNameColumn(arr);
+
+      // Armar lista de nombres desde esa columna
+      let nombres = arr.map(r => (r[nameCol]!==undefined ? String(r[nameCol]).trim() : ''));
+
+      // Si la primera celda es encabezado "nombre*", omitirla
+      if(nombres.length && NAME_HEADER_RE.test(String(nombres[0]).trim())) nombres = nombres.slice(1);
+
+      // Filtrar vacíos y que realmente parezcan nombres
+      nombres = nombres.filter(n => isLikelyName(n));
+
+      if(!nombres.length){
+        showMsg('No se detectaron nombres válidos. Verifica que tu archivo tenga una columna con nombres.','err');
+        return;
+      }
+
+      // Evitar duplicados existentes
+      showMsg('Importando a Firebase…','info');
+      const snap = await getDocs(collection(db,'escuelas',sid,'grupos',gid,'alumnos'));
+      const existentes = new Set();
+      snap.forEach(d=>{ const nm=(d.data().name||'').trim().toLowerCase(); if(nm) existentes.add(nm); });
+
+      let added=0, skipped=0;
+      for(const nombre of nombres){
+        const key = nombre.toLowerCase();
+        if(existentes.has(key)){ skipped++; continue; }
+        try{
+          await addDoc(collection(db,'escuelas',sid,'grupos',gid,'alumnos'), { name:nombre, createdAt: serverTimestamp() });
+          existentes.add(key); added++;
+        }catch(e){ skipped++; console.error('Error agregando', nombre, e); }
+      }
+
+      // Mensaje de éxito + CTA a tomarlista.html
+      showMsg(`
+        <div><strong>Lista subida correctamente</strong> ✅</div>
+        <div>Ya puedes <strong>tomar asistencia</strong>.</div>
+        <div class="actions">
+          <a class="btn" href="${tomarURL}">Ir a Tomar Asistencia</a>
+          <a class="btn btn-outline" href="${btnBack.href}">Regresar al menú</a>
+        </div>
+        <div style="margin-top:6px;font-size:12px;opacity:.8">
+          Los alumnos ya están guardados en Firebase y se mostrarán en <code>tomarlista.html</code>.
+        </div>
+      `,'ok');
+
+    }catch(err){
+      console.error(err);
+      showMsg('Ocurrió un error al leer/importar el archivo.','err');
+    }
+  }
+</script>
+</body>
+</html>

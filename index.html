@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Control de Asistencia · Inicio</title>
+  <style>
+    *{ box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; }
+    body{ background:#f5f5f5; color:#333; line-height:1.6; }
+    header{ background:linear-gradient(135deg,#4A90E2,#2E5FAA); color:#fff; padding:15px 0; text-align:center; box-shadow:0 2px 5px rgba(0,0,0,0.1); position:sticky; top:0; }
+    .container{ max-width:600px; margin:0 auto; padding:20px; }
+    .welcome-message{ text-align:center; margin:40px 0; }
+    .welcome-icon{ font-size:60px; margin-bottom:20px; color:#4A90E2; }
+    .card{ background:#fff; border-radius:10px; padding:15px; margin-bottom:20px; box-shadow:0 3px 10px rgba(0,0,0,0.08); text-align:center; }
+    .btn{ display:block; text-align:center; background:linear-gradient(135deg,#4A90E2,#3A80D2); color:#fff; border:none; padding:12px 20px; border-radius:8px; cursor:pointer; font-size:16px; text-decoration:none; transition:.2s; margin-bottom: 10px; }
+    .btn[aria-disabled="true"]{ opacity:.6; pointer-events:none; }
+    .btn:hover{ filter:brightness(1.05); }
+    .btn-secondary { background:linear-gradient(135deg, #6c757d, #5a6268); }
+    .error-details { background-color: #f8d7da; color: #721c24; padding: 15px; border-radius: 5px; margin: 15px 0; text-align: left; font-size: 14px; }
+    .instructions { background-color: #e2e3e5; color: #383d41; padding: 15px; border-radius: 5px; margin: 15px 0; text-align: left; font-size: 14px; }
+    .status-success { color: green; }
+    .status-error { color: red; }
+    .hidden { display: none; }
+    .spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #3498db;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Control de Asistencia</h1>
+  </header>
+
+  <div class="container">
+    <!-- Bienvenida -->
+    <div class="welcome-message">
+      <div class="welcome-icon">🏫</div>
+      <h2>Bienvenido Maestro</h2>
+      <p>Gestiona la asistencia de tus escuelas y grupos</p>
+    </div>
+
+    <!-- Estado Firebase -->
+    <div id="fbStatus" class="card">
+      <div id="statusMessage">Conectando con Firebase…</div>
+      <div id="statusSpinner" class="spinner"></div>
+    </div>
+
+    <!-- Detalles del error (inicialmente ocultos) -->
+    <div id="errorDetails" class="error-details hidden">
+      <h3>Error de conexión:</h3>
+      <p id="errorMessage"></p>
+    </div>
+
+    <!-- Instrucciones para resolver el problema -->
+    <div id="instructions" class="instructions hidden">
+      <h3>¿Cómo solucionar este problema?</h3>
+      <ol>
+        <li>Ve a la <a href="https://console.firebase.google.com/" target="_blank">consola de Firebase</a></li>
+        <li>Selecciona tu proyecto</li>
+        <li>Ve a Firestore Database → Reglas</li>
+        <li>Actualiza las reglas para permitir acceso (solo para desarrollo):</li>
+        <pre>
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
+        </pre>
+        <li>Haz clic en Publicar</li>
+        <li>Vuelve a esta página y <a href="javascript:window.location.reload()">recarga</a></li>
+      </ol>
+      <p><strong>Nota:</strong> Estas reglas permiten acceso completo a cualquier usuario. Para producción, implementa reglas de seguridad más estrictas.</p>
+    </div>
+
+    <!-- Botones de acción -->
+    <a id="goEscuelas" class="btn" href="./escuelas.html" aria-disabled="true">Ir a Escuelas</a>
+    <button id="retryButton" class="btn btn-secondary hidden">Reintentar conexión</button>
+  </div>
+
+  <!-- Firebase + Firestore + Analytics (SDK modular vía CDN) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getFirestore, doc, setDoc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { getAnalytics, isSupported as analyticsSupported } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics.js";
+
+    // === Config de TU proyecto (integrada) ===
+    const firebaseConfig = {
+      apiKey: "AIzaSyBEIeZz3HeU-8EVirVx9JAYnGbBegh1Uh4",
+      authDomain: "maestros-7faa6.firebaseapp.com",
+      projectId: "maestros-7faa6",
+      storageBucket: "maestros-7faa6.firebasestorage.app",
+      messagingSenderId: "328284079222",
+      appId: "1:328284079222:web:f0ab5c3443469d145d4b57",
+      measurementId: "G-YKBQD9EJH3"
+    };
+
+    // Inicializar Firebase
+    const app = initializeApp(firebaseConfig);
+    const db  = getFirestore(app);
+
+    // Analytics (seguro: solo si es soportado)
+    try {
+      if (await analyticsSupported()) {
+        getAnalytics(app);
+      }
+    } catch (e) {
+      // Ignorar si no hay HTTPS / entorno no soportado
+      console.warn("Analytics no disponible:", e?.message || e);
+    }
+
+    // UI refs
+    const fbStatus = document.getElementById("fbStatus");
+    const statusMessage = document.getElementById("statusMessage");
+    const statusSpinner = document.getElementById("statusSpinner");
+    const errorDetails = document.getElementById("errorDetails");
+    const errorMessage = document.getElementById("errorMessage");
+    const instructions = document.getElementById("instructions");
+    const goBtn = document.getElementById("goEscuelas");
+    const retryButton = document.getElementById("retryButton");
+
+    // Probar Firestore escribiendo/leyendo un doc
+    async function pingFirestore(){
+      try{
+        const ref = doc(db, "__meta", "ping");
+        await setDoc(ref, { lastPing: serverTimestamp() }, { merge:true });
+        const snap = await getDoc(ref);
+        return { success: true, data: snap.exists() };
+      }catch(e){
+        console.error("Firestore ping error:", e);
+        return { success: false, error: e };
+      }
+    }
+
+    // Actualizar UI basado en el resultado
+    function updateUI(result) {
+      statusSpinner.classList.add('hidden');
+      
+      if (result.success) {
+        statusMessage.textContent = "Firebase conectado correctamente ✔";
+        statusMessage.classList.add('status-success');
+        goBtn.setAttribute("aria-disabled","false");
+      } else {
+        statusMessage.textContent = "Error de conexión con Firestore";
+        statusMessage.classList.add('status-error');
+        
+        // Mostrar detalles del error
+        errorMessage.textContent = result.error.message || "Error desconocido";
+        errorDetails.classList.remove('hidden');
+        
+        // Mostrar instrucciones para permisos
+        instructions.classList.remove('hidden');
+        
+        // Mostrar botón de reintentar
+        retryButton.classList.remove('hidden');
+      }
+    }
+
+    // Función para probar la conexión
+    async function testConnection() {
+      statusSpinner.classList.remove('hidden');
+      statusMessage.textContent = "Conectando con Firebase…";
+      errorDetails.classList.add('hidden');
+      instructions.classList.add('hidden');
+      retryButton.classList.add('hidden');
+      
+      const result = await pingFirestore();
+      updateUI(result);
+    }
+
+    // Configurar evento para el botón de reintentar
+    retryButton.addEventListener('click', testConnection);
+
+    // Iniciar prueba de conexión
+    testConnection();
+  </script>
+</body>
+</html>

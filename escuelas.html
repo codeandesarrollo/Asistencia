@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Escuelas</title>
+  <style>
+    *{ box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; }
+    body{ background:#f5f5f5; color:#333; line-height:1.6; }
+    header{ background:linear-gradient(135deg,#4A90E2,#2E5FAA); color:#fff; padding:15px 0; text-align:center; box-shadow:0 2px 5px rgba(0,0,0,0.1); position:sticky; top:0; }
+    .container{ max-width:720px; margin:0 auto; padding:20px; }
+    .btn{ display:inline-block; background:linear-gradient(135deg,#4A90E2,#3A80D2); color:#fff; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-size:15px; text-decoration:none; transition:.2s; }
+    .btn:hover{ filter:brightness(1.05); }
+    .card{ background:#fff; border-radius:12px; padding:16px; margin-bottom:16px; box-shadow:0 3px 10px rgba(0,0,0,.08); }
+    .form-control{ width:100%; padding:12px; border:1px solid #ddd; border-radius:8px; font-size:16px; margin-bottom:10px; }
+    .school{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:14px; border:1px solid #eee; border-radius:10px; background:linear-gradient(135deg,#f8f9fa,#eef2f6); margin-bottom:10px; }
+    .school h3{ font-size:18px; margin:0; }
+    .actions{ display:flex; gap:8px; flex-wrap:wrap; }
+    .empty{ text-align:center; color:#6c757d; padding:24px 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Escuelas</h1>
+  </header>
+
+  <div class="container">
+    <!-- Botón volver -->
+    <a class="btn" href="./index.html">← Inicio</a>
+
+    <!-- Alta de escuela -->
+    <div class="card">
+      <h2>Agregar escuela</h2>
+      <input id="schoolName" class="form-control" placeholder="Nombre de la escuela">
+      <button id="addBtn" class="btn">Agregar</button>
+    </div>
+
+    <!-- Listado -->
+    <div class="card">
+      <h2>Tus escuelas</h2>
+      <div id="list"></div>
+      <div id="empty" class="empty" style="display:none;">No hay escuelas registradas.</div>
+    </div>
+  </div>
+
+  <!-- Firebase (CDN) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { 
+      getFirestore, collection, addDoc, doc, serverTimestamp, 
+      onSnapshot, query, orderBy 
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+    // === Config de tu proyecto ===
+    const firebaseConfig = {
+      apiKey: "AIzaSyBEIeZz3HeU-8EVirVx9JAYnGbBegh1Uh4",
+      authDomain: "maestros-7faa6.firebaseapp.com",
+      projectId: "maestros-7faa6",
+      storageBucket: "maestros-7faa6.firebasestorage.app",
+      messagingSenderId: "328284079222",
+      appId: "1:328284079222:web:f0ab5c3443469d145d4b57",
+      measurementId: "G-YKBQD9EJH3"
+    };
+
+    const app  = initializeApp(firebaseConfig);
+    const db   = getFirestore(app);
+
+    // UI refs
+    const listEl    = document.getElementById('list');
+    const emptyEl   = document.getElementById('empty');
+    const addBtn    = document.getElementById('addBtn');
+    const nameInput = document.getElementById('schoolName');
+
+    // Render listado
+    function renderSchools(items){
+      listEl.innerHTML = '';
+      if(!items.length){
+        emptyEl.style.display = 'block';
+        return;
+      }
+      emptyEl.style.display = 'none';
+
+      items.forEach(s=>{
+        const row = document.createElement('div');
+        row.className = 'school';
+        row.innerHTML = `
+          <div>
+            <h3>${s.name || '(Sin nombre)'}</h3>
+          </div>
+          <div class="actions">
+            <a class="btn" href="./escuela.html?sid=${s.id}">Administrar</a>
+          </div>
+        `;
+        listEl.appendChild(row);
+      });
+    }
+
+    // Suscripción en tiempo real
+    function subscribeSchools(){
+      const col  = collection(db, 'escuelas');
+      const qy   = query(col, orderBy('createdAt','desc'));
+      onSnapshot(qy, snap=>{
+        const items = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+        renderSchools(items);
+      });
+    }
+
+    // Agregar escuela
+    async function addSchool(){
+      const name = nameInput.value.trim();
+      if(!name){ alert('Escribe el nombre de la escuela.'); return; }
+      try{
+        await addDoc(collection(db,'escuelas'), {
+          name,
+          createdAt: serverTimestamp()
+        });
+        nameInput.value = '';
+      }catch(e){
+        console.error(e);
+        alert('Error al guardar la escuela');
+      }
+    }
+
+    // Eventos
+    addBtn.addEventListener('click', addSchool);
+    nameInput.addEventListener('keyup', (e)=>{
+      if(e.key==='Enter') addSchool();
+    });
+
+    // Iniciar
+    subscribeSchools();
+  </script>
+</body>
+</html>

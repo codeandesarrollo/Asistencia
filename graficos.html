@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Gráficos de Asistencia</title>
+<style>
+  :root{
+    --primary:#4A90E2; --txt:#2b2f36; --card:#fff; --muted:#6b7280;
+    --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,Segoe UI,Roboto,sans-serif}
+  body{background:#f5f6fb;color:var(--txt)}
+  header{background:linear-gradient(135deg,var(--primary),#2E5FAA);color:#fff;padding:18px 0;text-align:center}
+  .container{max-width:1100px;margin:0 auto;padding:22px}
+  .card{background:var(--card);border-radius:14px;padding:18px;border:1px solid #e6ebf3;box-shadow:0 6px 18px rgba(0,0,0,.05);margin-bottom:16px}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  .spacer{flex:1}
+  .pill{display:inline-block;padding:6px 10px;border-radius:999px;background:#eaf2ff;color:#1f3b77;font-size:13px}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;font-weight:600;text-decoration:none;cursor:pointer}
+  .btn-outline{border:1px solid var(--primary);color:var(--primary);background:#fff}
+  .btn-primary{background:linear-gradient(135deg,var(--primary),#2E5FAA);color:#fff;border:1px solid transparent}
+  .control{padding:10px;border:1px solid #dfe3ea;border-radius:10px;font-size:14px}
+  .muted{color:var(--muted);font-size:14px}
+  .grid{display:grid;gap:16px;grid-template-columns:1fr}
+  @media (min-width:1000px){ .grid{grid-template-columns:1.2fr .8fr} }
+  .legend{display:flex;gap:12px;align-items:center;font-size:14px}
+  .dot{width:10px;height:10px;border-radius:50%}
+  .dot.a{background:var(--ok)} .dot.r{background:var(--warn)} .dot.f{background:var(--bad)}
+  .hscroll{overflow:auto}
+  .footer-note{font-size:12px;color:var(--muted);margin-top:8px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Gráficos de asistencia</h1>
+  <p id="ctx" class="pill"></p>
+</header>
+
+<div class="container">
+  <!-- Controles -->
+  <div class="card">
+    <div class="row">
+      <div>
+        <label for="mes" class="muted">Mes</label><br/>
+        <input id="mes" type="month" class="control"/>
+      </div>
+      <div class="legend">
+        <span class="dot a"></span> A (Asistencia)
+        <span class="dot r"></span> R (Retardo)
+        <span class="dot f"></span> F (Falta)
+      </div>
+      <div class="spacer"></div>
+      <a id="btnBack" class="btn btn-outline" href="#">← Regresar</a>
+      <button id="btnRefrescar" class="btn btn-primary">Actualizar</button>
+      <button id="btnExcel" class="btn btn-outline" title="Descargar Excel con datos y gráficas">⬇️ Descargar Excel</button>
+    </div>
+    <div id="status" class="muted" style="margin-top:8px"></div>
+  </div>
+
+  <!-- Gráficas -->
+  <div class="grid">
+    <div class="card">
+      <h3 style="margin-bottom:10px">Diario del mes (barras apiladas A/R/F)</h3>
+      <div class="hscroll"><canvas id="chartDaily" height="160"></canvas></div>
+      <div class="footer-note">Cada barra representa un día del mes seleccionado.</div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-bottom:10px">Resumen mensual del grupo</h3>
+      <canvas id="chartMonthly" height="220"></canvas>
+      <div id="resumeText" class="footer-note"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-bottom:10px">Acumulado por alumno (mes seleccionado)</h3>
+    <div class="hscroll"><canvas id="chartAlumnos" height="380"></canvas></div>
+    <div class="footer-note">Suma de estados por alumno en el mes.</div>
+  </div>
+</div>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<!-- Firebase -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getFirestore, collection, getDocs, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  // --- Firebase Config ---
+  const firebaseConfig = {
+    apiKey: "AIzaSyBEIeZz3HeU-8EVirVx9JAYnGbBegh1Uh4",
+    authDomain: "maestros-7faa6.firebaseapp.com",
+    projectId: "maestros-7faa6",
+    storageBucket: "maestros-7faa6.firebasestorage.app",
+    messagingSenderId: "328284079222",
+    appId: "1:328284079222:web:f0ab5c3443469d145d4b57",
+    measurementId: "G-YKBQD9EJH3"
+  };
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+
+  // --- Contexto ---
+  const p = new URLSearchParams(location.search);
+  const sid = p.get('sid');
+  const gid = p.get('gid');
+  if(!sid || !gid){ alert('Falta sid o gid'); location.href='./escuelas.html'; }
+  document.getElementById('ctx').textContent = `Escuela: ${sid} · Grupo: ${gid}`;
+  document.getElementById('btnBack').href = `opcionesgrupo.html?sid=${encodeURIComponent(sid)}&gid=${encodeURIComponent(gid)}`;
+
+  // --- Controles ---
+  const inputMes = document.getElementById('mes');
+  const statusBox = document.getElementById('status');
+  const btnRefrescar = document.getElementById('btnRefrescar');
+  const btnExcel = document.getElementById('btnExcel');
+
+  // Mes actual por defecto
+  const now = new Date();
+  inputMes.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  // --- Charts refs ---
+  let chartDaily, chartMonthly, chartAlumnos;
+
+  // --- Estado para exportación ---
+  let lastAgg = {
+    alumnos: [],
+    byDay: {},
+    monthlyTotals: {A:0,R:0,F:0},
+    perAlumno: {},
+    allDays: [],
+    ym: ""
+  };
+
+  // --- Helpers fecha ---
+  function monthRange(ym){
+    const [y,m] = ym.split('-').map(Number);
+    const last  = new Date(y, m, 0);
+    const startStr = `${y}-${String(m).padStart(2,'0')}-01`;
+    const endStr   = `${y}-${String(m).padStart(2,'0')}-${String(last.getDate()).padStart(2,'0')}`;
+    return [startStr, endStr];
+  }
+  function fmt(dateStr){ return dateStr.slice(8,10); }
+
+  // --- Colores estados ---
+  const COLOR_A = '#22c55e';
+  const COLOR_R = '#f59e0b';
+  const COLOR_F = '#ef4444';
+
+  // --- Cargar datos ---
+  async function fetchAlumnos(){
+    const snap = await getDocs(collection(db,'escuelas',sid,'grupos',gid,'alumnos'));
+    const alumnos = [];
+    snap.forEach(d=> alumnos.push({id:d.id, name:d.data().name||''}));
+    return alumnos;
+  }
+
+  async function fetchAsistenciasMes(ym){
+    const [startStr, endStr] = monthRange(ym);
+    const qref = query(
+      collection(db,'escuelas',sid,'grupos',gid,'asistencias'),
+      where('date','>=',startStr),
+      where('date','<=',endStr),
+      orderBy('date','asc')
+    );
+    const snap = await getDocs(qref);
+    const docs = [];
+    snap.forEach(d=> docs.push({id:d.id, ...d.data()}));
+    return docs; // {date:'YYYY-MM-DD', registros:{alumnoId:'A'|'F'|'R'}}
+  }
+
+  function aggregateMonthly(alumnos, asistenciasDocs){
+    const totalStudents = alumnos.length;
+    const alumnoIds = alumnos.map(a=>a.id);
+
+    const byDay = {};
+    const monthlyTotals = {A:0,F:0,R:0};
+    const perAlumno = {};
+    alumnoIds.forEach(id=> perAlumno[id] = {A:0,F:0,R:0});
+
+    asistenciasDocs.forEach(rec=>{
+      const d = rec.date;
+      const regs = rec.registros || {};
+      const dayCount = {A:0,F:0,R:0};
+
+      alumnoIds.forEach(id=>{
+        const v = String(regs[id] ?? 'A').toUpperCase();
+        const val = (v==='A'||v==='F'||v==='R') ? v : 'A';
+        dayCount[val] += 1;
+        perAlumno[id][val] += 1;
+      });
+
+      byDay[d] = dayCount;
+      monthlyTotals.A += dayCount.A;
+      monthlyTotals.F += dayCount.F;
+      monthlyTotals.R += dayCount.R;
+    });
+
+    return { byDay, monthlyTotals, perAlumno, totalStudents };
+  }
+
+  // --- Render charts ---
+  function renderDailyChart(canvas, byDay){
+    const labels = Object.keys(byDay).sort();
+    const Adata = labels.map(d=> byDay[d].A);
+    const Rdata = labels.map(d=> byDay[d].R);
+    const Fdata = labels.map(d=> byDay[d].F);
+
+    const data = {
+      labels: labels.map(fmt),
+      datasets: [
+        {label:'A', data:Adata, backgroundColor:COLOR_A, stack:'stack1'},
+        {label:'R', data:Rdata, backgroundColor:COLOR_R, stack:'stack1'},
+        {label:'F', data:Fdata, backgroundColor:COLOR_F, stack:'stack1'}
+      ]
+    };
+    const options = {
+      responsive:true,
+      scales:{ x:{ stacked:true }, y:{ stacked:true, beginAtZero:true } },
+      plugins:{ legend:{ display:true } }
+    };
+
+    if(chartDaily) chartDaily.destroy();
+    chartDaily = new Chart(canvas.getContext('2d'), { type:'bar', data, options });
+  }
+
+  function renderMonthlyChart(canvas, totals){
+    const data = {
+      labels:['A','R','F'],
+      datasets:[{ data:[totals.A, totals.R, totals.F], backgroundColor:[COLOR_A, COLOR_R, COLOR_F] }]
+    };
+    const options = { responsive:true, plugins:{ legend:{ display:true } } };
+
+    if(chartMonthly) chartMonthly.destroy();
+    chartMonthly = new Chart(canvas.getContext('2d'), { type:'doughnut', data, options });
+  }
+
+  function renderAlumnosChart(canvas, alumnos, perAlumno){
+    const labels = alumnos.map(a=> a.name || '(sin nombre)');
+    const Adata  = alumnos.map(a=> perAlumno[a.id]?.A || 0);
+    const Rdata  = alumnos.map(a=> perAlumno[a.id]?.R || 0);
+    const Fdata  = alumnos.map(a=> perAlumno[a.id]?.F || 0);
+
+    const data = {
+      labels,
+      datasets:[
+        {label:'A', data:Adata, backgroundColor:COLOR_A, stack:'sa'},
+        {label:'R', data:Rdata, backgroundColor:COLOR_R, stack:'sa'},
+        {label:'F', data:Fdata, backgroundColor:COLOR_F, stack:'sa'}
+      ]
+    };
+    const options = {
+      indexAxis:'y',
+      responsive:true,
+      maintainAspectRatio:false,
+      scales:{ x:{ stacked:true, beginAtZero:true }, y:{ stacked:true } },
+      plugins:{ legend:{ display:true } }
+    };
+
+    if(chartAlumnos) chartAlumnos.destroy();
+    chartAlumnos = new Chart(canvas.getContext('2d'), { type:'bar', data, options });
+  }
+
+  function resumeText(totals, days, students){
+    const totalMarcaciones = days * students;
+    const pct = (n)=> totalMarcaciones ? (n*100/totalMarcaciones).toFixed(1) : '0.0';
+    return `Totales del mes · Marcaciones: ${totalMarcaciones} · A: ${totals.A} (${pct(totals.A)}%) · R: ${totals.R} (${pct(totals.R)}%) · F: ${totals.F} (${pct(totals.F)}%)`;
+  }
+
+  // --- Orquestación ---
+  async function refresh(){
+    try{
+      statusBox.textContent = 'Cargando…';
+      const ym = inputMes.value;
+
+      const alumnos = await fetchAlumnos();
+      const docs = await fetchAsistenciasMes(ym);
+
+      const { byDay, monthlyTotals, perAlumno, totalStudents } = aggregateMonthly(alumnos, docs);
+
+      // Completar días del mes
+      const [y,m] = ym.split('-').map(Number);
+      const last = new Date(y, m, 0).getDate();
+      const allDays = [];
+      for(let d=1; d<=last; d++){
+        allDays.push(`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+      }
+      allDays.forEach(ds=>{
+        if(!byDay[ds]) byDay[ds] = {A:0,R:0,F:0};
+      });
+
+      // Guardar estado
+      lastAgg = { alumnos, byDay, monthlyTotals, perAlumno, allDays, ym };
+
+      // Render
+      renderDailyChart(document.getElementById('chartDaily'), byDay);
+      renderMonthlyChart(document.getElementById('chartMonthly'), monthlyTotals);
+      renderAlumnosChart(document.getElementById('chartAlumnos'), alumnos, perAlumno);
+
+      document.getElementById('resumeText').textContent =
+        resumeText(monthlyTotals, Object.keys(byDay).length, totalStudents);
+
+      const diasConRegistro = docs.length;
+      statusBox.textContent = `Mes ${ym} · Alumnos: ${totalStudents} · Días con registro: ${diasConRegistro}`;
+    }catch(err){
+      console.error(err);
+      statusBox.textContent = 'Error al cargar datos.';
+      alert('No se pudieron cargar los datos de asistencia.');
+    }
+  }
+
+  // === Exportación a Excel (gráficas nativas, vía API /api/export-excel) ===
+  async function exportExcel(){
+    try{
+      if(!lastAgg || !lastAgg.alumnos.length){
+        alert('No hay datos para exportar. Da clic en “Actualizar” primero.');
+        return;
+      }
+
+      const payload = {
+        sid, gid, ym: lastAgg.ym,
+        alumnos: lastAgg.alumnos,
+        allDays: lastAgg.allDays,
+        byDay: lastAgg.byDay,
+        monthlyTotals: lastAgg.monthlyTotals,
+        perAlumno: lastAgg.perAlumno
+      };
+
+      const resp = await fetch('/api/export-excel', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if(!resp.ok){
+        const t = await resp.text();
+        throw new Error('Error exportando: ' + t);
+      }
+
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Asistencia_${sid}_${gid}_${lastAgg.ym}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }catch(err){
+      console.error(err);
+      alert('No se pudo generar el Excel (nativo). Revisa la consola.');
+    }
+  }
+
+  // Eventos
+  btnRefrescar.addEventListener('click', refresh);
+  inputMes.addEventListener('change', refresh);
+  btnExcel.addEventListener('click', exportExcel);
+
+  // Arranque
+  refresh();
+</script>
+</body>
+</html>
