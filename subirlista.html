@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Subir lista de alumnos</title>
 <style>
-  :root{ --primary:#4A90E2; --txt:#2b2f36 }
+  :root{ --primary:#4A90E2; --txt:#2b2b36 }
   *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,Segoe UI,Roboto,sans-serif}
   body{background:#f5f6fb;color:var(--txt)}
   header{background:linear-gradient(135deg,var(--primary),#2E5FAA);color:#fff;padding:18px 0;text-align:center}
@@ -20,7 +20,8 @@
   .ok{background:#d4edda;color:#155724;border-color:#c3e6cb}
   .err{background:#f8d7da;color:#721c24;border-color:#f5c6cb}
   .info{background:#d1ecf1;color:#0c5460;border-color:#bee5eb}
-  .actions{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+  .student-list{margin-top:12px;border-top:1px dashed #e6ebf3;padding-top:10px}
+  .student-item{padding:6px 10px;border:1px solid #eef3fb;border-radius:8px;margin:4px 0;background:#fafcff}
 </style>
 </head>
 <body>
@@ -40,11 +41,17 @@
       <label for="file" class="btn">Seleccionar archivo</label>
       <input id="file" type="file" accept=".xlsx,.xls,.csv" style="display:none" />
       <p style="color:#5f6b7a;margin-top:6px;font-size:13px">
-        Se importará automáticamente detectando la <b>columna de nombres</b>.
+        Se importará automáticamente detectando la <b>columna de nombres de alumnos</b>.
       </p>
     </div>
 
     <div id="msg" class="msg info" style="display:none;"></div>
+
+    <!-- Vista previa simple (sin botones) -->
+    <div id="studentPreview" class="student-list" style="display:none">
+      <h3 style="margin-bottom:8px">Nombres detectados</h3>
+      <div id="studentList"></div>
+    </div>
   </div>
 </div>
 
@@ -56,10 +63,10 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import {
     getFirestore, collection, addDoc, getDocs, serverTimestamp,
-    doc, getDoc, collectionGroup
+    collectionGroup
   } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-  // Config
+  // ===== Firebase =====
   const app = initializeApp({
     apiKey: "AIzaSyBEIeZz3HeU-8EVirVx9JAYnGbBegh1Uh4",
     authDomain: "maestros-7faa6.firebaseapp.com",
@@ -71,7 +78,7 @@
   });
   const db  = getFirestore(app);
 
-  // Contexto + botones
+  // ===== Contexto + UI =====
   const p = new URLSearchParams(location.search);
   const sid = p.get('sid');
   const gid = p.get('gid');
@@ -80,10 +87,14 @@
   const btnBack = document.getElementById('btnBack');
   btnBack.href = `opcionesgrupo.html?sid=${encodeURIComponent(sid||'')}&gid=${encodeURIComponent(gid||'')}`;
 
-  // UI
   const drop = document.getElementById('drop');
   const file = document.getElementById('file');
   const msg  = document.getElementById('msg');
+  const studentPreview = document.getElementById('studentPreview');
+  const studentList = document.getElementById('studentList');
+
+  let m = null;
+  let detectedNames = [];
 
   function showMsg(html, kind='info'){
     msg.style.display='block';
@@ -95,7 +106,7 @@
     showMsg('Faltan parámetros (?sid y ?gid). La importación está deshabilitada.','err');
   }
 
-  // Drag & drop visual
+  // ===== Drag & Drop =====
   ['dragenter','dragover'].forEach(ev=>{
     drop.addEventListener(ev, (e)=>{ e.preventDefault(); e.stopPropagation(); drop.classList.add('highlight'); }, false);
   });
@@ -105,58 +116,267 @@
   drop.addEventListener('drop', e=>{ const files = e.dataTransfer.files; if(files && files.length) handleFile(files[0]); });
   file.addEventListener('change', e=>{ if(e.target.files.length) handleFile(e.target.files[0]); });
 
-  // ---------- Detección de columna "Nombre" ----------
-  const NAME_HEADER_RE = /^(nombre|nombres|alumno|alumna|estudiante|name|apellidos|apellido|full\s*name)$/i;
-  const LETTER_RE = /[A-Za-zÁÉÍÓÚÑÜáéíóúñü]/;
+  // ===== Utilidades / Heurísticas =====
+  const FORMULA_RE = /^=/;
+  const LETTER_RE  = /[A-Za-zÁÉÍÓÚÑÜáéíóúñü]/;
 
-  function isLikelyName(val){
+  const HEADERS = {
+    full:   [/^(nombre(\s*completo)?|alumno|alumna|estudiante|name|full\s*name)$/i],
+    first:  [/^(nombres?|primer\s*nombre|first(\s*name)?|nombre\s*1)$/i],
+    middle: [/^(segundo\s*nombre|middle(\s*name)?|nombre\s*2)$/i],
+    last:   [/^(apellidos?|apellido\s*paterno|a\.?\s*paterno|last(\s*name)?|surname)$/i],
+    last2:  [/^(apellido\s*materno|a\.?\s*materno)$/i]
+  };
+
+  const TARGET_HEADER_PATTERNS = [
+    /nombre\s*(?:de[l]?|del)?\s*(?:los|las)?\s*alumno(?:s)?(?:\s*\(a\))?$/i,
+    /nombre\s+alumno(?:s)?(?:\s*\(a\))?$/i,
+    /alumno(?:s)?\s+nombre$/i,
+    /nombre\s+del\s+alumno$/i,
+  ];
+
+  function fold(s){
+    return String(s??'').normalize('NFD').replace(/\p{Diacritic}/gu,'');
+  }
+  function foldKey(s){ return fold(s).toLowerCase(); }
+  function cleanPiece(s){
+    return String(s ?? '').replace(/\s+/g,' ').replace(/^[\s,.;-]+|[\s,.;-]+$/g,'').trim();
+  }
+
+  function isLikelyNameValue(val){
     if(val == null) return false;
     const s = String(val).trim();
     if(!s) return false;
-    if(!LETTER_RE.test(s)) return false;          // debe tener letras
-    const digits = (s.match(/[0-9]/g)||[]).length;
-    if(digits / s.length > 0.7) return false;     // evitar códigos
+    if(FORMULA_RE.test(s)) return false;
+    if(!LETTER_RE.test(s)) return false;
+    const digits = (s.match(/\d/g)||[]).length;
+    if(digits / s.length > 0.25) return false;
     if(s.length < 2) return false;
     return true;
   }
 
-  function detectNameColumn(rows2D){
-    if(!rows2D.length) return 0;
-    const headers = rows2D[0] || [];
-    let bestByHeader = -1;
-    headers.forEach((h,idx)=>{ if(typeof h === 'string' && NAME_HEADER_RE.test(h.trim())) bestByHeader = idx; });
-    if(bestByHeader >= 0) return bestByHeader;
-
-    const sampleEnd = Math.min(rows2D.length, 50);
-    const colCount = Math.max(...rows2D.map(r=>r.length));
-    let bestIdx = 0, bestScore = -1;
-    for(let c=0;c<colCount;c++){
-      let score = 0;
-      for(let r=0;r<sampleEnd;r++){
-        const val = rows2D[r]?.[c];
-        if(isLikelyName(val)) score++;
-      }
-      if(score > bestScore){ bestScore = score; bestIdx = c; }
-    }
-    return bestIdx;
+  function isProbablyHeaderRow(row){
+    if(!row) return false;
+    const strCells = row.filter(v => typeof v === 'string');
+    if(strCells.length === 0) return false;
+    const shortish = strCells.filter(s => s.trim().length <= 24 && !/\d/.test(s)).length;
+    return shortish >= Math.max(1, Math.floor(row.length * 0.3));
   }
-  // -----------------------------------------------
 
-  // === Resolver m a partir de sid (sin session y sin m en URL)
+  function headerIndex(headers, regexes){
+    for(let i=0;i<headers.length;i++){
+      const h = String(headers[i] ?? '').trim();
+      if(!h) continue;
+      for(const rx of regexes){ if(rx.test(h)) return i; }
+    }
+    return -1;
+  }
+
+  function findTargetHeaderPosition(rows2D){
+    for(let r=0; r<rows2D.length; r++){
+      const row = rows2D[r] || [];
+      for(let c=0; c<row.length; c++){
+        const raw = String(row[c] ?? '').trim();
+        if(!raw) continue;
+
+        const stripped = fold(raw)
+          .replace(/^\s*\d+\s*[º°]?\s*[A-ZÁÉÍÓÚ]?\s*[-–:]?\s*/i,'')
+          .replace(/[“”"']/g,'')
+          .trim();
+
+        if(TARGET_HEADER_PATTERNS.some(rx => rx.test(stripped))) {
+          return { row: r, col: c, text: raw };
+        }
+        const U = stripped.toUpperCase();
+        if(U.includes('NOMBRE') && U.includes('ALUMNO')) {
+          return { row: r, col: c, text: raw };
+        }
+      }
+    }
+    return null;
+  }
+
+  function contentNameScore(rows, col, startRow){
+    let score = 0, considered = 0;
+    const end = Math.min(rows.length, startRow + 400);
+    for(let r=startRow; r<end; r++){
+      const v = rows[r]?.[col];
+      if(v === undefined) continue;
+      considered++;
+      if(isLikelyNameValue(v)) score++;
+    }
+    if(considered > 0){
+      const uniq = new Set();
+      for(let r=startRow; r<end; r++){
+        const v = rows[r]?.[col];
+        if(v !== undefined && String(v).trim()) uniq.add(foldKey(String(v).trim()));
+      }
+      score += Math.min(uniq.size, 50) * 0.05;
+    }
+    return score;
+  }
+
+  function detectNameSchema(rows2D){
+    if(!rows2D.length) return { mode:'single', cols:[0], header:false };
+    const headerRow = rows2D[0] || [];
+    const hasHeader = isProbablyHeaderRow(headerRow);
+
+    if(hasHeader){
+      const idxFull  = headerIndex(headerRow, HEADERS.full);
+      const idxFirst = headerIndex(headerRow, HEADERS.first);
+      const idxMid   = headerIndex(headerRow, HEADERS.middle);
+      const idxLast  = headerIndex(headerRow, HEADERS.last);
+      const idxLast2 = headerIndex(headerRow, HEADERS.last2);
+
+      if(idxFull >= 0)  return { mode:'single', cols:[idxFull], header:true };
+      if(idxFirst >= 0 && (idxLast >= 0 || idxLast2 >= 0)){
+        return { mode:'split', cols:{first:idxFirst, middle:idxMid, last:idxLast, last2:idxLast2}, header:true };
+      }
+      if(idxLast>=0 && idxLast2>=0){
+        return { mode:'split', cols:{first:-1, middle:-1, last:idxLast, last2:idxLast2}, header:true };
+      }
+    }
+
+    const colCount = Math.max(...rows2D.map(r=>r.length));
+    let bestCol = 0, bestScore = -1;
+    const start = hasHeader ? 1 : 0;
+    for(let c=0;c<colCount;c++){
+      const sc = contentNameScore(rows2D, c, start);
+      if(sc > bestScore){ bestScore = sc; bestCol = c; }
+    }
+    return { mode:'single', cols:[bestCol], header:hasHeader };
+  }
+
+  function composeFromRow(row, schema){
+    if(schema.mode === 'single'){
+      return cleanPiece(row?.[schema.cols[0]]);
+    }
+    const {first, middle, last, last2} = schema.cols;
+    const parts = [];
+    if(first  >= 0) parts.push(cleanPiece(row?.[first]));
+    if(middle >= 0) parts.push(cleanPiece(row?.[middle]));
+    if(last   >= 0) parts.push(cleanPiece(row?.[last]));
+    if(last2  >= 0) parts.push(cleanPiece(row?.[last2]));
+    return parts.filter(Boolean).join(' ');
+  }
+
+  function extractNamesUnderTargetHeader(rows2D){
+    const pos = findTargetHeaderPosition(rows2D);
+    if(!pos) return null;
+
+    const startRow = pos.row + 1;
+    const col      = pos.col;
+    const names = [];
+    const seen  = new Set();
+
+    for(let r=startRow; r<rows2D.length; r++){
+      const v = rows2D[r]?.[col];
+      const name = cleanPiece(v);
+      if(!isLikelyNameValue(name)) continue;
+
+      const key = foldKey(name);
+      if(seen.has(key)) continue;
+      seen.add(key);
+      names.push(name);
+    }
+    return { names, used: { row: pos.row, col: pos.col, label: pos.text } };
+  }
+
+  function extractStudentNamesFromRows(rows2D){
+    const explicit = extractNamesUnderTargetHeader(rows2D);
+    if(explicit && explicit.names.length){
+      console.log('Encabezado explícito encontrado en', explicit.used);
+      return explicit.names;
+    }
+    const names = [];
+    const seen  = new Set();
+    const schema = detectNameSchema(rows2D);
+    const startRow = schema.header ? 1 : 0;
+
+    for(let r=startRow; r<rows2D.length; r++){
+      const name = composeFromRow(rows2D[r], schema);
+      if(!isLikelyNameValue(name)) continue;
+
+      const key = foldKey(name);
+      if(seen.has(key)) continue;
+      seen.add(key);
+      names.push(name);
+    }
+    return names;
+  }
+
+  // ===== Firestore helpers =====
   async function resolveMaestroBySchoolId(sid){
-    // Tomamos todas las escuelas y filtramos por ID; luego leemos el padre maestros/{m}
     const cg = await getDocs(collectionGroup(db, 'escuelas'));
     const found = cg.docs.find(d => d.id === sid);
     if (!found) return null;
-    return found.ref.parent.parent?.id || null; // maestros/{m}
+    return found.ref.parent.parent?.id || null;
   }
 
-  let m = null; // maestro resuelto
+  // ===== Importación (con campo `order`) =====
+  async function processDetectedNames() {
+    if(!detectedNames.length) return;
 
+    try {
+      
+
+      // Trae existentes: evita duplicados y toma el mayor 'order'
+      const snap = await getDocs(collection(db,'maestros',m,'escuelas',sid,'grupos',gid,'alumnos'));
+      const existentes = new Set();
+      let maxOrder = 0;
+      snap.forEach(d=>{
+        const data = d.data() || {};
+        const nm=(data.name||'').trim();
+        if(nm) existentes.add(foldKey(nm));
+        if(typeof data.order === 'number' && data.order > maxOrder) maxOrder = data.order;
+      });
+
+      let added=0, skipped=0;
+
+      // detectedNames ya está ordenado A-Z
+      for(const nombre of detectedNames){
+        const key = foldKey(nombre);
+        if(existentes.has(key)){ skipped++; continue; }
+
+        try{
+          const nextOrder = ++maxOrder; // consecutivo estable
+          await addDoc(collection(db,'maestros',m,'escuelas',sid,'grupos',gid,'alumnos'), {
+            name: nombre,
+            order: nextOrder,
+            createdAt: serverTimestamp()
+          });
+          existentes.add(key);
+          added++;
+        }catch(e){
+          skipped++;
+          console.error('Error agregando', nombre, e);
+        }
+      }
+
+      showMsg(`
+        <div><strong>Lista subida</strong> ✅</div>
+        <div>Agregados: <b>${added}</b> · </div>
+        <div class="student-list" style="margin-top:8px">
+          <a class="btn" href="${tomarURL}">Ir a Tomar Asistencia</a>
+          <a class="btn btn-outline" href="${btnBack.href}">Regresar al menú</a>
+        </div>
+        <div style="margin-top:6px;font-size:12px;opacity:.8">
+         
+        </div>
+      `,'ok');
+
+      studentPreview.style.display = 'none';
+
+    } catch(err) {
+      console.error(err);
+      showMsg('Ocurrió un error al importar los nombres. Revisa la consola.', 'err');
+    }
+  }
+
+  // ===== Lectura (primera hoja) + AUTO-IMPORT =====
   async function handleFile(f){
     if(!sid || !gid){ showMsg('No se puede importar sin ?sid y ?gid en la URL.','err'); return; }
 
-    // Resuelve m si aún no lo tenemos
     if(!m){
       showMsg('Resolviendo escuela…','info');
       m = await resolveMaestroBySchoolId(sid);
@@ -167,56 +387,39 @@
       showMsg('Leyendo archivo…','info');
       const ab = await f.arrayBuffer();
       const wb = XLSX.read(ab, {type:'array'});
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const arr = XLSX.utils.sheet_to_json(ws, {header:1, raw:true}); // [[c0,c1,..], ...]
-      if(!arr.length){ showMsg('El archivo está vacío.','err'); return; }
 
-      const nameCol = detectNameColumn(arr);
-      let nombres = arr.map(r => (r[nameCol]!==undefined ? String(r[nameCol]).trim() : ''));
-      if(nombres.length && NAME_HEADER_RE.test(String(nombres[0]).trim())) nombres = nombres.slice(1);
-      nombres = nombres.filter(n => isLikelyName(n));
-      if(!nombres.length){
-        showMsg('No se detectaron nombres válidos. Verifica que tu archivo tenga una columna con nombres.','err');
+      const firstSheet = wb.SheetNames[0];
+      const ws = wb.Sheets[firstSheet];
+      if(!ws){ showMsg('No se encontró la primera hoja.','err'); return; }
+
+      const rows2D = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:"", blankrows:false});
+      if(!rows2D.length){ showMsg('La hoja está vacía.','err'); return; }
+
+      detectedNames = extractStudentNamesFromRows(rows2D);
+      detectedNames.sort((a,b)=> a.localeCompare(b, 'es', { sensitivity: 'base', ignorePunctuation: true }));
+
+      if(!detectedNames.length){
+        showMsg('No se detectaron nombres válidos. Verifica que exista una columna de nombre o un encabezado “Nombre de alumnos”.','err');
         return;
       }
 
-      showMsg('Importando a Firebase…','info');
+      // Vista previa (opcional)
+      studentList.innerHTML = '';
+      detectedNames.forEach(name => {
+        const div = document.createElement('div');
+        div.className = 'student-item';
+        div.textContent = name;
+        studentList.appendChild(div);
+      });
+      studentPreview.style.display = 'block';
 
-      // EXISTENTES (anidado)
-      const snap = await getDocs(collection(db,'maestros',m,'escuelas',sid,'grupos',gid,'alumnos'));
-      const existentes = new Set();
-      snap.forEach(d=>{ const nm=(d.data().name||'').trim().toLowerCase(); if(nm) existentes.add(nm); });
-
-      let added=0, skipped=0;
-      for(const nombre of nombres){
-        const key = nombre.toLowerCase();
-        if(existentes.has(key)){ skipped++; continue; }
-        try{
-          await addDoc(collection(db,'maestros',m,'escuelas',sid,'grupos',gid,'alumnos'), {
-            name:nombre,
-            createdAt: serverTimestamp()
-          });
-          existentes.add(key); added++;
-        }catch(e){
-          skipped++; console.error('Error agregando', nombre, e);
-        }
-      }
-
-      showMsg(`
-        <div><strong>Lista subida</strong> ✅</div>
-        <div>Agregados: <b>${added}</b> · Omitidos (duplicados/errores): <b>${skipped}</b></div>
-        <div class="actions" style="margin-top:8px">
-          <a class="btn" href="${tomarURL}">Ir a Tomar Asistencia</a>
-          <a class="btn btn-outline" href="${btnBack.href}">Regresar al menú</a>
-        </div>
-        <div style="margin-top:6px;font-size:12px;opacity:.8">
-          Guardado en <code>maestros/${m}/escuelas/${sid}/grupos/${gid}/alumnos</code>.
-        </div>
-      `,'ok');
+      // Mensaje y AUTO-IMPORT
+     
+      await processDetectedNames();
 
     }catch(err){
       console.error(err);
-      showMsg('Ocurrió un error al leer/importar el archivo. Revisa la consola.', 'err');
+      showMsg('Ocurrió un error al leer el archivo. Revisa la consola.', 'err');
     }
   }
 </script>

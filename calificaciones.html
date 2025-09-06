@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Calificaciones · Menú</title>
+<style>
+  :root{ --primary:#4A90E2; --dark:#1e2740; --card:#fff; --txt:#2b2f36; --muted:#6b7280 }
+  *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,Segoe UI,Roboto,sans-serif}
+  body{background:#f5f6fb;color:var(--txt)}
+  header{background:linear-gradient(135deg,var(--primary),#2E5FAA);color:#fff;padding:18px 0;text-align:center}
+  .container{max-width:1000px;margin:0 auto;padding:22px}
+  .pill{display:inline-block;background:#ffffff22;border:1px solid #ffffff55;color:#fff;padding:6px 10px;border-radius:999px;font-size:13px}
+  .card{background:var(--card);border-radius:14px;padding:22px;border:1px solid #e6ebf3;box-shadow:0 6px 18px rgba(0,0,0,.05)}
+  .row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .btn{display:inline-flex;gap:8px;align-items:center;padding:8px 12px;border:1px solid #fff3;border-radius:10px;color:#fff;text-decoration:none}
+  .btn-home{border-color:#2E5FAA;background:linear-gradient(135deg,#2E5FAA,#4A90E2)}
+  .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+  @media (max-width:1000px){ .grid{grid-template-columns:repeat(2,minmax(0,1fr))} }
+  @media (max-width:560px){ .grid{grid-template-columns:1fr} }
+  .opt{display:flex;flex-direction:column;align-items:flex-start;gap:8px;border:2px dashed #dbe3f1;border-radius:14px;padding:16px;transition:.2s}
+  .opt:hover{border-color:var(--primary);transform:translateY(-2px)}
+  .opt .emoji{font-size:28px}
+  .opt h3{font-size:15px;margin:2px 0 0 0}
+  .opt p{font-size:13px;color:var(--muted);line-height:1.4}
+  .opt a{margin-top:auto;display:inline-flex;gap:8px;align-items:center;background:linear-gradient(135deg,var(--primary),#2E5FAA);color:#fff;text-decoration:none;padding:8px 12px;border-radius:10px;font-weight:600}
+  .section-title{font-weight:700;margin:18px 0 10px 0}
+  .tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+  .input{background:#fff;border:1px solid #e6ebf3;border-radius:10px;padding:10px 12px;min-width:220px}
+
+  .list{border:1px solid #e6ebf3;border-radius:12px;overflow:hidden;background:#fff}
+  /* Ahora 4 columnas: avatar | nombre | estado | promedio */
+  .list-head, .list-row{display:grid;grid-template-columns:56px 1fr 120px 120px;gap:10px;align-items:center}
+  .list-head{background:#f7f9fe;font-weight:600;color:#4b5563;padding:10px 12px}
+  .list-row{padding:10px 12px;border-top:1px solid #f0f3fa}
+
+  .avatar{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:#edf3ff;color:#2E5FAA;font-weight:700}
+  .muted{color:#6b7280;font-size:12px}
+  .badge{display:inline-block;background:#eef2ff;color:#334155;border:1px solid #dbe3f1;padding:2px 8px;border-radius:999px;font-size:12px}
+  .empty{padding:16px;text-align:center;color:#6b7280}
+  .loading{padding:16px;text-align:center;color:#6b7280}
+
+  /* Chips de promedio */
+  .grade{display:inline-block;padding:4px 10px;border-radius:999px;font-weight:700;border:1px solid transparent}
+  .grade-ok{background:#e8f9ee;border-color:#c7f0d7;color:#14532d}
+  .grade-warn{background:#fff6e5;border-color:#fde6b5;color:#7c2d12}
+  .grade-bad{background:#fee2e2;border-color:#fecaca;color:#7f1d1d}
+  .grade-na{background:#eef2ff;border-color:#dbe3f1;color:#334155}
+</style>
+</head>
+<body>
+<header>
+  <h1>Calificaciones · Menú</h1>
+  <p id="ctx" class="pill"></p>
+</header>
+
+<div class="container">
+  <div class="card" style="margin-bottom:16px">
+    <div class="row">
+      <div>
+        <div class="muted">Escoge cómo calificar</div>
+        <div class="section-title">Modos de calificación</div>
+      </div>
+      <a id="btnHome" class="btn btn-home" href="#">← Regresar</a>
+    </div>
+
+    <div class="grid" id="gridModes">
+      <!-- SIMPLE -->
+      <div class="opt">
+        <div class="emoji">🔢</div>
+        <h3>Captura simple (0–10)</h3>
+        <p>Una calificación por alumno, ideal para exámenes/actividad única.</p>
+        <a id="linkSimple" href="modocalificaciones/porexamen.html">Usar este modo →</a>
+      </div>
+      <!-- RUBROS -->
+      <div class="opt">
+        <div class="emoji">🧩</div>
+        <h3>Por rubros / ponderaciones</h3>
+        <p>Configura rubros (tareas, proyecto, examen) con pesos y calcula promedio.</p>
+        <a id="linkRubros" href="#">Configurar rubros →</a>
+      </div>
+      <!-- EVIDENCIAS -->
+      <div class="opt">
+        <div class="emoji">📁</div>
+        <h3>Portafolio / evidencias</h3>
+        <p>Sube evidencias por alumno y asigna puntajes por evidencia.</p>
+        <a id="linkEvidencias" href="#">Abrir portafolio →</a>
+      </div>
+      <!-- PARCIAL / UNIDAD -->
+      <div class="opt">
+        <div class="emoji">🗂️</div>
+        <h3>Parcial / unidad</h3>
+        <p>Gestiona bloques (Parcial 1, 2, 3…) con sus calificaciones.</p>
+        <a id="linkParcial" href="#">Gestionar parciales →</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <div class="muted">Referencia rápida</div>
+        <div class="section-title">Lista de alumnos</div>
+      </div>
+      <div class="tools">
+        <input id="search" class="input" type="search" placeholder="Buscar alumno…"/>
+        <span id="count" class="badge">0 alumnos</span>
+      </div>
+    </div>
+
+    <div class="list">
+      <div class="list-head">
+        <div></div>
+        <div>Alumno</div>
+        <div>Estado</div>
+        <div>Promedio</div>
+      </div>
+      <div id="alumnosList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase + lógica -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import {
+    getFirestore, doc, getDoc, collection, getDocs, query, orderBy, collectionGroup, onSnapshot
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  // ===== Firebase =====
+  const firebaseConfig = {
+    apiKey: "AIzaSyBEIeZz3HeU-8EVirVx9JAYnGbBegh1Uh4",
+    authDomain: "maestros-7faa6.firebaseapp.com",
+    projectId: "maestros-7faa6",
+    storageBucket: "maestros-7faa6.firebasestorage.app",
+    messagingSenderId: "328284079222",
+    appId: "1:328284079222:web:f0ab5c3443469d145d4b57",
+    measurementId: "G-YKBQD9EJH3"
+  };
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+
+  // ===== Contexto + UI =====
+  const p     = new URLSearchParams(location.search);
+  const sid   = p.get('sid');
+  const gid   = p.get('gid');
+  const code  = p.get('code'); // si llega por error, bloqueamos (siguiendo tu política)
+  const ctx   = document.getElementById('ctx');
+  const btnHome = document.getElementById('btnHome');
+
+  const linkSimple     = document.getElementById('porexamen.html');
+  const linkRubros     = document.getElementById('linkRubros');
+  const linkEvidencias = document.getElementById('linkEvidencias');
+  const linkParcial    = document.getElementById('linkParcial');
+
+  const alumnosListEl = document.getElementById('alumnosList');
+  const searchEl = document.getElementById('search');
+  const countEl  = document.getElementById('count');
+
+  if(!sid || !gid){
+    alert('Falta sid o gid en la URL');
+    location.href = './escuelas.html';
+  }
+
+  const qp = (o)=>Object.entries(o)
+    .filter(([,v])=>v!==undefined&&v!==null&&v!=='')
+    .map(([k,v])=>`${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+
+  // Back (usa el nombre de archivo que tienes en tu proyecto)
+  btnHome.href = `./opcionesgrupo.html?${qp({ sid, gid })}`;
+
+  // Enlaces a submódulos (aún por crear)
+  linkSimple.href     = `./calificaciones-simple.html?${qp({ sid, gid })}`;
+  linkRubros.href     = `./calificaciones-rubros.html?${qp({ sid, gid })}`;
+  linkEvidencias.href = `./calificaciones-evidencias.html?${qp({ sid, gid })}`;
+  linkParcial.href    = `./calificaciones-parcial.html?${qp({ sid, gid })}`;
+
+  // Si llega con code, bloquear (siguiendo tu regla de acceso por código)
+  if(code){
+    alert('Calificaciones no está disponible con acceso por código.');
+    location.href = `./grupos.html?${qp({ sid, code })}`;
+  }
+
+  // —— Helpers para contexto (maestroId, escuela y grupo) ——
+  async function resolveMaestroBySchoolId(schoolId){
+    const cg = await getDocs(collectionGroup(db, 'escuelas')); // busca en todas las escuelas
+    const found = cg.docs.find(d => d.id === schoolId);
+    return found ? (found.ref.parent.parent?.id || null) : null; // maestros/{m}
+  }
+
+  let maestroId = null;
+  let alumnos   = [];
+  let alumnosFiltered = [];
+  let promedios = {}; // { [alumnoId]: { avg:number, n:number, updatedAt:Timestamp, ... } }
+
+  async function loadContextAndRender(){
+    try{
+      maestroId = await resolveMaestroBySchoolId(sid);
+
+      let schoolName = 'Escuela';
+      let groupName  = 'Grupo';
+
+      if(maestroId){
+        const sSnap = await getDoc(doc(db,'maestros', maestroId, 'escuelas', sid));
+        if(sSnap.exists()) schoolName = sSnap.data().name || sSnap.data().nombre || schoolName;
+
+        const gSnap = await getDoc(doc(db,'maestros', maestroId, 'escuelas', sid, 'grupos', gid));
+        if(gSnap.exists()) groupName = gSnap.data().name || gSnap.data().nombre || groupName;
+      }
+
+      ctx.textContent = `${schoolName} · ${groupName}`;
+
+      // Loading state
+      alumnosListEl.innerHTML = `<div class="loading">Cargando alumnos…</div>`;
+
+      // Cargar alumnos y promedios
+      await loadAlumnos();
+      await loadPromedios();
+
+      renderList(alumnos);
+      subscribePromedios(); // escucha cambios en tiempo real
+    }catch(e){
+      console.error(e);
+      ctx.textContent = 'Calificaciones';
+      alumnosListEl.innerHTML = `<div class="empty">Ocurrió un error cargando el grupo.</div>`;
+    }
+  }
+
+  // Carga robusta de alumnos (name → nombre → sin orden)
+  async function loadAlumnos(){
+    alumnos = [];
+    try{
+      const base = collection(db,'maestros', maestroId, 'escuelas', sid, 'grupos', gid, 'alumnos');
+
+      // 1) intenta ordenar por 'name'
+      try{
+        const snap = await getDocs(query(base, orderBy('name','asc')));
+        alumnos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+        if(alumnos.length) return;
+      }catch(err1){
+        console.warn('Fallback a "nombre" (orderBy("name") falló):', err1?.message||err1);
+      }
+
+      // 2) intenta ordenar por 'nombre'
+      try{
+        const snap = await getDocs(query(base, orderBy('nombre','asc')));
+        alumnos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+        if(alumnos.length) return;
+      }catch(err2){
+        console.warn('Fallback sin orden (orderBy("nombre") falló):', err2?.message||err2);
+      }
+
+      // 3) sin orden si lo anterior falla o no hay campo
+      const snap = await getDocs(base);
+      alumnos = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    }catch(e){
+      console.error('Error cargando alumnos:', e);
+      alumnos = [];
+    }
+  }
+
+  // Cargar promedios agregados por alumno
+  async function loadPromedios(){
+    promedios = {};
+    try{
+      const colRes = collection(db,'maestros', maestroId, 'escuelas', sid, 'grupos', gid, 'calificaciones_resumen');
+      const snap = await getDocs(colRes);
+      snap.forEach(d=>{
+        const data = d.data() || {};
+        promedios[d.id] = {
+          avg: (typeof data.avg === 'number') ? data.avg
+               : (typeof data.promedio === 'number') ? data.promedio
+               : null,
+          n: typeof data.n === 'number' ? data.n : (typeof data.total === 'number' ? data.total : null),
+          updatedAt: data.updatedAt || data.updated_at || null
+        };
+      });
+    }catch(e){
+      console.warn('No se pudo cargar calificaciones_resumen:', e?.message||e);
+      promedios = {};
+    }
+  }
+
+  // Suscripción en tiempo real a cambios de promedios
+  function subscribePromedios(){
+    try{
+      const colRes = collection(db,'maestros', maestroId, 'escuelas', sid, 'grupos', gid, 'calificaciones_resumen');
+      onSnapshot(colRes, (snap)=>{
+        snap.docChanges().forEach(ch=>{
+          const id = ch.doc.id;
+          const data = ch.doc.data() || {};
+          promedios[id] = {
+            avg: (typeof data.avg === 'number') ? data.avg
+                 : (typeof data.promedio === 'number') ? data.promedio
+                 : null,
+            n: typeof data.n === 'number' ? data.n : (typeof data.total === 'number' ? data.total : null),
+            updatedAt: data.updatedAt || data.updated_at || null
+          };
+        });
+        // Si hay filtro activo, respeta filtro; si no, pinta todo
+        const q = searchEl.value.toLowerCase().trim();
+        if(q){
+          const filtered = alumnos.filter(a=>{
+            const nm = (a.name || a.nombre || '').toLowerCase();
+            const mat= (a.matricula || a.curp || a.id || '').toLowerCase();
+            return nm.includes(q) || mat.includes(q);
+          });
+          renderList(filtered);
+        }else{
+          renderList(alumnos);
+        }
+      });
+    }catch(e){
+      console.warn('No se pudo suscribir a calificaciones_resumen:', e?.message||e);
+    }
+  }
+
+  function initials(name=''){
+    const parts = String(name).trim().split(/\s+/);
+    return (parts[0]?.[0]||'A').toUpperCase() + (parts[1]?.[0]||'').toUpperCase();
+  }
+
+  function fmtAvg(v){
+    if(typeof v !== 'number' || Number.isNaN(v)) return '—';
+    return v.toFixed(2);
+  }
+
+  function avgClass(v){
+    if(typeof v !== 'number' || Number.isNaN(v)) return 'grade grade-na';
+    if(v >= 9) return 'grade grade-ok';
+    if(v >= 7) return 'grade grade-warn';
+    return 'grade grade-bad';
+  }
+
+  function renderList(rows){
+    countEl.textContent = `${rows.length} alumno${rows.length===1?'':'s'}`;
+    if(!rows.length){
+      alumnosListEl.innerHTML = `<div class="empty">No hay alumnos registrados aún.</div>`;
+      return;
+    }
+    alumnosListEl.innerHTML = rows.map(a=>{
+      const nm = a.name || a.nombre || 'Sin nombre';
+      const status = a.activo===false ? 'Inactivo' : 'Activo';
+      const res = promedios[a.id] || {};
+      const avg = (typeof res.avg === 'number') ? res.avg
+                : (typeof res.promedio === 'number') ? res.promedio
+                : null;
+      const n   = (typeof res.n === 'number') ? res.n : null;
+      const badgeTitle = (avg!=null && n!=null) ? `Promedio de ${n} calificación${n===1?'':'es'}` : 'Sin calificaciones';
+
+      return `
+        <div class="list-row" title="${badgeTitle}">
+          <div class="avatar">${initials(nm)}</div>
+          <div>
+            <div>${nm}</div>
+            <div class="muted">
+              ${a.matricula ? `Matrícula: ${a.matricula}` : (a.curp ? `CURP: ${a.curp}` : `ID: ${a.id}`)}
+            </div>
+          </div>
+          <div><span class="badge">${status}</span></div>
+          <div><span class="${avgClass(avg)}">${fmtAvg(avg)}</span></div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // Buscar
+  searchEl.addEventListener('input', (e)=>{
+    const q = e.target.value.toLowerCase().trim();
+    if(!q) return renderList(alumnos);
+    alumnosFiltered = alumnos.filter(a=>{
+      const nm = (a.name || a.nombre || '').toLowerCase();
+      const mat= (a.matricula || a.curp || a.id || '').toLowerCase();
+      return nm.includes(q) || mat.includes(q);
+    });
+    renderList(alumnosFiltered);
+  });
+
+  // INIT
+  loadContextAndRender();
+</script>
+</body>
+</html>

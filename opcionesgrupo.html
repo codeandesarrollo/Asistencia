@@ -22,6 +22,8 @@
   .row{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
   .btn{display:inline-flex;gap:8px;align-items:center;padding:8px 12px;border:1px solid #fff3;border-radius:10px;color:#fff;text-decoration:none}
   .btn-home{border-color:#2E5FAA;background:linear-gradient(135deg,#2E5FAA,#4A90E2)}
+  .btn[aria-disabled="true"]{opacity:.6;pointer-events:none}
+  .coming-soon{font-size:12px;color:#ff6b6b;font-weight:600;margin-top:5px;}
 </style>
 </head>
 <body>
@@ -34,12 +36,11 @@
   <div class="card">
     <div class="row">
       <div>Selecciona una opción</div>
-      <!-- Regresar a la lista de grupos de esta escuela -->
       <a id="btnHome" class="btn btn-home" href="#">← Regresar</a>
     </div>
 
     <div class="grid">
-      <!-- SUBIR LISTA -->
+      <!-- SUBIR LISTA (se deshabilita en modo code) -->
       <div class="opt" id="optSubir">
         <div class="emoji">📤</div>
         <h3>Subir lista</h3>
@@ -47,7 +48,7 @@
         <a id="linkSubir" href="#">Ir a Subir lista →</a>
       </div>
 
-      <!-- ASISTENCIA -->
+      <!-- ASISTENCIA (siempre habilitado) -->
       <div class="opt" id="optAsis">
         <div class="emoji">🗓️</div>
         <h3>Asistencia</h3>
@@ -55,46 +56,148 @@
         <a id="linkAsis" href="#">Ir a Tomar Asistencia →</a>
       </div>
 
-      <!-- CALIFICACIONES (placeholder) -->
-      <div class="opt disabled">
-        <div class="emoji">📝</div>
-        <h3>Calificaciones</h3>
-        <p>Próximamente</p>
-        <a href="#">Abrir</a>
-      </div>
-
-      <!-- GRÁFICOS -->
+      <!-- GRÁFICAS (se deshabilita en modo code) -->
       <div class="opt" id="optGraf">
         <div class="emoji">📊</div>
         <h3>Gráficos Asistencia</h3>
         <p>Ver estadísticas del grupo.</p>
         <a id="linkGraf" href="#">Ver Gráficos →</a>
       </div>
+
+      <!-- CALIFICACIONES (BLOQUEADA - no disponible aún) -->
+      <div class="opt disabled" id="optCalif">
+        <div class="emoji">📝</div>
+        <h3>Calificaciones</h3>
+        <p>Captura y consulta calificaciones.</p>
+        <span class="coming-soon">Próximamente</span>
+        <!-- Enlace deshabilitado -->
+        <a style="background: #ccc; cursor: not-allowed;">Ir a Calificaciones →</a>
+      </div>
     </div>
   </div>
 </div>
 
-<script>
-  // Solo usamos sid y gid. Nada de 'm'.
-  const p = new URLSearchParams(location.search);
+<!-- Firebase solo para validar y resolver nombre de escuela -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import {
+    getFirestore, doc, getDoc, collectionGroup
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBEIeZz3HeU-8EVirVx9JAYnGbBegh1Uh4",
+    authDomain: "maestros-7faa6.firebaseapp.com",
+    projectId: "maestros-7faa6",
+    storageBucket: "maestros-7faa6.firebasestorage.app",
+    messagingSenderId: "328284079222",
+    appId: "1:328284079222:web:f0ab5c3443469d145d4b57",
+    measurementId: "G-YKBQD9EJH3"
+  };
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+
+  const p   = new URLSearchParams(location.search);
   const sid = p.get('sid');
   const gid = p.get('gid');
+  const code = p.get('code'); // si viene, es acceso por código
+
+  const ctx = document.getElementById('ctx');
+  const btnHome = document.getElementById('btnHome');
+
+  const optSubir = document.getElementById('optSubir');
+  const optGraf  = document.getElementById('optGraf');
+  const optCalif = document.getElementById('optCalif');
+
+  const linkSubir= document.getElementById('linkSubir');
+  const linkAsis = document.getElementById('linkAsis');
+  const linkGraf = document.getElementById('linkGraf');
+  const linkCalif= document.getElementById('linkCalif');
 
   if(!sid || !gid){
     alert('Falta sid o gid en la URL');
     location.href = './escuelas.html';
   }
 
-  // Contexto visible
-  document.getElementById('ctx').textContent = `Escuela: ${sid} · Grupo: ${gid}`;
+  const qp = (o)=>Object.entries(o)
+    .filter(([,v])=>v!==undefined&&v!==null&&v!=='')
+    .map(([k,v])=>`${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
 
-  // Volver a grupos de esta escuela
-  document.getElementById('btnHome').href = `./grupos.html?sid=${encodeURIComponent(sid)}`;
+  // Back
+  btnHome.href = code
+    ? `./grupos.html?${qp({ sid, code })}`
+    : `./grupos.html?${qp({ sid })}`;
 
-  // Enlaces que propagan sid & gid (cada página resolverá 'm' internamente)
-  document.getElementById('linkSubir').href = `./subirlista.html?sid=${encodeURIComponent(sid)}&gid=${encodeURIComponent(gid)}`;
-  document.getElementById('linkAsis').href  = `./tomarlista.html?sid=${encodeURIComponent(sid)}&gid=${encodeURIComponent(gid)}`;
-  document.getElementById('linkGraf').href  = `./graficos.html?sid=${encodeURIComponent(sid)}&gid=${encodeURIComponent(gid)}`;
+  // Propagar enlaces base
+  linkSubir.href = `./subirlista.html?${qp({ sid, gid })}`;
+  linkAsis.href  = `./tomarlista.html?${qp({ sid, gid })}`;
+  linkGraf.href  = `./graficos.html?${qp({ sid, gid })}`;
+  // Calificaciones deshabilitada - enlace eliminado
+  if (linkCalif) linkCalif.remove();
+
+  // ---- Mostrar solo el NOMBRE de la escuela ----
+  let maestroId = null;
+
+  async function resolveMaestroBySchoolId(schoolId){
+    const cg = await getDocs(collectionGroup(db, 'escuelas')); // busca en todas las escuelas
+    const found = cg.docs.find(d => d.id === schoolId);
+    return found ? (found.ref.parent.parent?.id || null) : null; // maestros/{m}
+  }
+
+  async function loadSchoolNameOnly(){
+    try{
+      maestroId = await resolveMaestroBySchoolId(sid);
+      if(!maestroId){
+        ctx.textContent = 'Escuela';
+        return;
+      }
+      const sSnap = await getDoc(doc(db,'maestros', maestroId, 'escuelas', sid));
+      const schoolName = sSnap.exists() ? (sSnap.data().name || 'Escuela') : 'Escuela';
+      ctx.textContent = code ? `${schoolName} · Acceso por código` : schoolName;
+    }catch(e){
+      console.error(e);
+      ctx.textContent = 'Escuela';
+    }
+  }
+
+  // En modo code, deshabilitar lo no permitido y validar
+  async function enforceCodeMode(){
+    if(!code) return;
+
+    // Deshabilitar módulos no permitidos en acceso por código
+    optSubir.classList.add('disabled');
+    optGraf.classList.add('disabled');
+    optCalif.classList.add('disabled');
+
+    linkSubir.removeAttribute('href');
+    linkGraf.removeAttribute('href');
+    // Calificaciones ya está deshabilitada por defecto
+
+    // Asistencia sí está permitida con code
+    linkAsis.href = `./tomarlista.html?${qp({ sid, gid, code })}`;
+
+    try{
+      const snap = await getDoc(doc(db,'accesos', code));
+      if(!snap.exists()){ alert('Código inválido.'); location.href = './index.html'; return; }
+      const acc = snap.data() || {};
+      const allowed = !!(acc.activo && acc.escuelaId === sid && Array.isArray(acc.grupos) && acc.grupos.includes(gid));
+      if(!allowed){
+        alert('Este código no tiene permisos para este grupo.');
+        location.href = `./grupos.html?${qp({ sid, code })}`;
+        return;
+      }
+    }catch(e){
+      console.error(e);
+      alert('Error validando el código.');
+      location.href = './index.html';
+    }
+  }
+
+  // INIT
+  import { getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  (async function init(){
+    await loadSchoolNameOnly();   // ← solo muestra el nombre de la escuela
+    await enforceCodeMode();
+  })();
 </script>
 </body>
 </html>

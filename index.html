@@ -42,7 +42,7 @@
       <input id="codigo" placeholder="Escribe tu código aquí"/>
       <button id="btnValidar" class="btn">Validar código</button>
       <div class="hint">
-        • Si es <b>código de escuela</b> te enviará a tomar lista (grupo).<br>
+        • Si es <b>código de escuela</b> te enviará a <b>Grupos</b> y ahí verás <i>solo tus grupos</i>.<br>
         • Si es <b>código de maestro</b> podrás administrar <i>solo tus</i> escuelas.
       </div>
       <div id="errorCodigo" class="status-error hidden">❌ Código inválido</div>
@@ -56,9 +56,7 @@
   <!-- Firebase + Firestore -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import {
-      getFirestore, doc, getDoc
-    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyBEIeZz3HeU-8EVirVx9JAYnGbBegh1Uh4",
@@ -82,10 +80,8 @@
     const bienvenida    = document.getElementById("bienvenida");
     const bienvenidaTxt = document.getElementById("bienvenidaTexto");
 
-    // Normaliza a mayúsculas y sin espacios alrededor
     const norm = (v)=> (v||"").trim().toUpperCase();
 
-    // Reconstruir sesión si ya inició como maestro
     (function hydrateFromSession(){
       const maestroCode = sessionStorage.getItem('maestroCode');
       const maestroNombre = sessionStorage.getItem('maestroNombre');
@@ -113,7 +109,7 @@
       btnValidar.disabled = true;
 
       try{
-        // 1) Intentar como CÓDIGO DE ACCESO (escuela/grupos)
+        // 1) ¿Código de escuela? (accesos)
         const accSnap = await getDoc(doc(db,"accesos", codigo));
         if (accSnap.exists()){
           const acc = accSnap.data() || {};
@@ -124,37 +120,27 @@
             return;
           }
           if (acc.escuelaId && Array.isArray(acc.grupos) && acc.grupos.length){
-            // Limpiar sesión de maestro y guardar code de acceso
+            // Limpia sesión de maestro y guarda el code de acceso
             sessionStorage.removeItem('maestroCode');
             sessionStorage.removeItem('maestroNombre');
             sessionStorage.setItem('accesoCode', codigo);
 
-            // Un solo grupo -> directo
-            if (acc.grupos.length === 1){
-              const gid = acc.grupos[0];
-              window.location.href =
-                `./tomarlista.html?sid=${encodeURIComponent(acc.escuelaId)}&gid=${encodeURIComponent(gid)}&code=${encodeURIComponent(codigo)}`;
-              return;
-            }
-            // Varios -> selector de grupos (grupos.html mostrará solo los permitidos por 'code')
-            window.location.href =
-              `./grupos.html?sid=${encodeURIComponent(acc.escuelaId)}&code=${encodeURIComponent(codigo)}`;
+            // **NUEVO FLUJO**: SIEMPRE manda a grupos (aunque sea 1 grupo)
+            window.location.href = `./grupos.html?sid=${encodeURIComponent(acc.escuelaId)}&code=${encodeURIComponent(codigo)}`;
             return;
           }
         }
 
-        // 2) Intentar como CÓDIGO DE MAESTRO (ID del doc = código)
+        // 2) ¿Código de maestro?
         const maestroSnap = await getDoc(doc(db, "maestros", codigo));
         if (maestroSnap.exists()){
           const maestro = maestroSnap.data() || {};
           const nombre  = maestro.nombre || "Maestro";
 
-          // Guardar sesión de maestro (para filtrar escuelas por ownerCode)
           sessionStorage.setItem('maestroCode', codigo);
           sessionStorage.setItem('maestroNombre', nombre);
           sessionStorage.removeItem('accesoCode');
 
-          // Actualizar UI
           bienvenida.textContent = `Bienvenido Maestro ${nombre}`;
           bienvenidaTxt.textContent = "Puedes continuar a tus escuelas";
           goBtn.setAttribute("aria-disabled","false");
@@ -164,7 +150,7 @@
           return;
         }
 
-        // 3) Ninguno de los dos
+        // 3) Ninguno
         errorCodigo.textContent = "❌ Código inválido";
         errorCodigo.classList.remove("hidden");
       }catch(e){
@@ -177,7 +163,6 @@
     }
 
     function salir(){
-      // resetear estado + limpiar sesión
       bienvenida.textContent = "Bienvenido Maestro";
       bienvenidaTxt.textContent = "Ingresa tu código para continuar";
       goBtn.setAttribute("aria-disabled","true");
@@ -190,7 +175,6 @@
       sessionStorage.removeItem('maestroNombre');
     }
 
-    // Eventos
     btnValidar.addEventListener("click", validarCodigo);
     codigoInput.addEventListener("keydown", e => { if(e.key==="Enter") validarCodigo(); });
     btnSalir.addEventListener("click", salir);

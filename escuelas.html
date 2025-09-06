@@ -19,7 +19,14 @@
     .school h3{ font-size:18px; margin:0; }
     .meta{ color:#666; font-size:13px; margin-top:4px; }
     .actions{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    .code-pill{ background:#eef2ff; color:#2E5FAA; padding:6px 10px; border-radius:999px; font-weight:600; font-size:13px; margin:2px; display:inline-block; }
+
+    /* Chips de códigos */
+    .codes-wrap{ display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+    .code-pill{ background:#eef2ff; color:#2E5FAA; padding:6px 10px; border-radius:999px; font-weight:600; font-size:12px; display:inline-flex; gap:8px; align-items:center; }
+    .pill-text{ font-weight:600; }
+    .pill-sub{ font-weight:500; color:#3a5ab0; }
+    .pill-del{ background:#fff; color:#d11; border:1px solid #f1c; border-radius:999px; font-size:12px; padding:3px 8px; cursor:pointer; }
+    .pill-del:hover{ filter:brightness(0.95); }
 
     /* Modal */
     .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000; }
@@ -79,7 +86,7 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import {
       getFirestore, collection, addDoc, doc, setDoc, updateDoc, serverTimestamp,
-      onSnapshot, query, orderBy, getDoc, getDocs
+      onSnapshot, query, orderBy, getDoc, getDocs, deleteDoc
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     // === Config de tu proyecto ===
@@ -113,17 +120,22 @@
     // Estado
     let currentSchoolId = null;
     let groups = [];
-    let CURRENT_CODE = null;      // código de maestro (sin Auth)
+    let CURRENT_CODE = null;    // código de maestro (sin Auth)
+    let MAESTRO_NAME = '';      // nombre legible del maestro
     let unsubscribeSchools = null;
+
+    // Cache de nombres de grupos por escuela: { [schoolId]: { [groupId]: name } }
+    const GROUP_NAME_CACHE = {};
 
     // ==== Helpers de sesión por CÓDIGO ====
     function getMaestroCodeFromSession(){
       return (sessionStorage.getItem('maestroCode') || '').trim();
     }
     function setSessionInfo(){
+      const who = MAESTRO_NAME ? `${MAESTRO_NAME} (código: ${CURRENT_CODE})` : `código: ${CURRENT_CODE}`;
       if (CURRENT_CODE){
         sessionInfo.style.display = 'block';
-        sessionInfo.textContent = `Sesión por CÓDIGO ✔ (maestro: ${CURRENT_CODE})`;
+        sessionInfo.textContent = `Sesión por CÓDIGO ✔ — Maestro: ${who}`;
       } else {
         sessionInfo.style.display = 'block';
         sessionInfo.textContent = 'Sin código de maestro. Regresa a Inicio e ingrésalo.';
@@ -135,30 +147,54 @@
       return (g.nombre ?? g.name ?? g.titulo ?? g.displayName ?? g.id).toString();
     }
 
-    // Render listado de escuelas con códigos existentes
-    function renderSchools(items){
+    async function getGroupNameMapForSchool(schoolId){
+      if (GROUP_NAME_CACHE[schoolId]) return GROUP_NAME_CACHE[schoolId];
+      const qy = collection(db, `maestros/${CURRENT_CODE}/escuelas/${schoolId}/grupos`);
+      const snap = await getDocs(qy);
+      const map = {};
+      snap.docs.forEach(d => { map[d.id] = displayNameFromGroup({ id: d.id, ...d.data() }); });
+      GROUP_NAME_CACHE[schoolId] = map;
+      return map;
+    }
+
+    // Render listado de escuelas con códigos (usando NOMBRES de grupos)
+    async function renderSchools(items){
       listEl.innerHTML = '';
       emptyEl.style.display = items.length ? 'none' : 'block';
 
-      items.forEach(school => {
+      for (const school of items){
         const row = document.createElement('div');
         row.className = 'school';
 
-        const codes = school.accessCodes || {}; // { code: { grupos, asignadoA, createdAt } }
-        const codesHtml = Object.keys(codes).length
-          ? Object.entries(codes).map(([code, info]) => {
-              const gruposTxt = Array.isArray(info.grupos) && info.grupos.length ? info.grupos.join(', ') : '—';
-              const asignado  = info.asignadoA ? `Para: ${info.asignadoA}` : 'Sin nombre';
-              const title = `${asignado} | Grupos: ${gruposTxt}`;
-              return `<span class="code-pill" title="${title}">Código: ${code}</span>`;
-            }).join('')
-          : '<span class="meta">Sin códigos aún</span>';
+        const codes = school.accessCodes || {}; // { code: { grupos, groupNames?, asignadoA, createdAt } }
+        const codeKeys = Object.keys(codes);
+
+        let codesHtml = '<span class="meta">Sin códigos aún</span>';
+        if (codeKeys.length){
+          // mapa id->name para fallback de códigos viejos
+          const nameMap = await getGroupNameMapForSchool(school.id);
+
+          codesHtml = `<div class="codes-wrap">` + codeKeys.map(code => {
+            const info = codes[code] || {};
+            const names = Array.isArray(info.groupNames) && info.groupNames.length
+              ? info.groupNames
+              : (Array.isArray(info.grupos) ? info.grupos.map(id => nameMap[id] || id) : []);
+            const gruposTxt = names.length ? names.join(', ') : '—';
+            const asignado  = info.asignadoA || 'Sin nombre';
+            return `
+              <span class="code-pill">
+                <span class="pill-text">Código: ${code}</span>
+                <span class="pill-sub">· Para: ${asignado}</span>
+                <span class="pill-sub">· Grupos: ${gruposTxt}</span>
+                <button class="pill-del" data-del="${code}" data-school="${school.id}">Eliminar</button>
+              </span>`;
+          }).join('') + `</div>`;
+        }
 
         row.innerHTML = `
           <div>
             <h3>${school.name || '(Sin nombre)'}</h3>
-            <div class="meta">ID: ${school.id}</div>
-            <div class="meta" style="margin-top:6px">${codesHtml}</div>
+            ${codesHtml}
           </div>
           <div class="actions">
             <a class="btn" href="./grupos.html?sid=${school.id}">Administrar</a>
@@ -166,7 +202,7 @@
           </div>
         `;
         listEl.appendChild(row);
-      });
+      }
 
       // Botón "Generar código"
       listEl.querySelectorAll('button[data-gen]').forEach(btn => {
@@ -176,18 +212,35 @@
           openModal();
         });
       });
+
+      // Botones "Eliminar" de cada código
+      listEl.querySelectorAll('button[data-del]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const code = btn.getAttribute('data-del');
+          const schoolId = btn.getAttribute('data-school');
+          const ok = confirm(`¿Eliminar el código ${code}? Se removerá también de la lista de esta escuela.`);
+          if(!ok) return;
+          try{
+            await deleteAccessCode(schoolId, code);
+          }catch(e){
+            console.error(e);
+            alert('No se pudo eliminar el código.');
+          }
+        });
+      });
     }
 
     // ====== ANIDADOS: maestros/{codigo}/escuelas ======
 
-    // Garantiza que exista el doc maestro (opcional, útil para consola/reglas)
+    // Garantiza que exista el doc maestro y lee el nombre
     async function ensureMaestroDoc(codigo){
       const maestroRef = doc(db, 'maestros', codigo);
       const snap = await getDoc(maestroRef);
       if(!snap.exists()){
-        await setDoc(maestroRef, {
-          createdAt: serverTimestamp()
-        }, { merge: true });
+        await setDoc(maestroRef, { createdAt: serverTimestamp() }, { merge: true });
+        MAESTRO_NAME = '';
+      } else {
+        MAESTRO_NAME = (snap.data()?.name || '').trim();
       }
     }
 
@@ -196,9 +249,10 @@
       if (unsubscribeSchools) { unsubscribeSchools(); unsubscribeSchools = null; }
       const col  = collection(db, `maestros/${codigo}/escuelas`);
       const qy   = query(col, orderBy('createdAt','desc'));
-      unsubscribeSchools = onSnapshot(qy, snap => {
+      unsubscribeSchools = onSnapshot(qy, async snap => {
         const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        renderSchools(items);
+        // render asíncrono para poder resolver nombres
+        await renderSchools(items);
       });
     }
 
@@ -227,7 +281,7 @@
         groups = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
                                    .sort((a,b)=> displayNameFromGroup(a).localeCompare(displayNameFromGroup(b)));
 
-        // Render checkboxes
+        // Render checkboxes (solo nombre, sin ID)
         groupList.innerHTML = '';
         if(!groups.length){
           groupList.innerHTML = `<div class="meta">Esta escuela no tiene grupos creados.</div>`;
@@ -242,7 +296,7 @@
           checkboxDiv.className = 'group-checkbox';
           checkboxDiv.innerHTML = `
             <input type="checkbox" id="group-${group.id}" value="${group.id}" data-nombre="${nombre.replace(/"/g,'&quot;')}" checked>
-            <label for="group-${group.id}">${nombre} <span class="meta">(${group.id})</span></label>
+            <label for="group-${group.id}">${nombre}</label>
           `;
           groupList.appendChild(checkboxDiv);
         });
@@ -261,7 +315,7 @@
     function closeModal(){ groupModal.style.display = 'none'; }
     cancelBtn.addEventListener('click', closeModal);
 
-    // Generar código con nombre + grupos
+    // Generar código con nombre + grupos (guardando también los NOMBRES)
     generateCodeBtn.addEventListener('click', async () => {
       const asignadoA = (asignadoAInput.value || '').trim();
       if(!asignadoA){
@@ -280,7 +334,7 @@
 
       generateCodeBtn.disabled = true;
       try {
-        const code = await generateAccessCodeWithGroups(currentSchoolId, selectedIds, asignadoA);
+        const code = await generateAccessCodeWithGroups(currentSchoolId, selectedIds, selectedNames, asignadoA);
         closeModal();
 
         const listaNombres = selectedNames.map(n => `- ${n}`).join('\n');
@@ -298,8 +352,8 @@
       }
     });
 
-    // Guardado en Firestore (anidado + accesos globales)
-    async function generateAccessCodeWithGroups(schoolId, selectedGroups, asignadoA){
+    // Guardado en Firestore (anidado + accesos globales) incluyendo NOMBRES de grupos
+    async function generateAccessCodeWithGroups(schoolId, selectedGroups, selectedGroupNames, asignadoA){
       // doc de la escuela anidado
       const escRef = doc(db, `maestros/${CURRENT_CODE}/escuelas/${schoolId}`);
       const escSnap = await getDoc(escRef);
@@ -315,8 +369,10 @@
           code = candidate;
           await setDoc(codeRef, {
             maestroCode: CURRENT_CODE,
+            maestroName: MAESTRO_NAME || null,
             escuelaId: schoolId,
             grupos: selectedGroups,
+            groupNames: selectedGroupNames,       // ← guardamos nombres
             asignadoA,
             activo: true,
             createdAt: serverTimestamp()
@@ -326,19 +382,39 @@
       }
       if(!code) throw new Error('No se pudo generar un código único, intenta de nuevo.');
 
-      // Espejo en la escuela para listar chips
+      // Espejo en la escuela para listar chips (con nombres)
       const schoolData = escSnap.data() || {};
       const updatedAccess = {
         ...(schoolData.accessCodes || {}),
         [code]: {
           grupos: selectedGroups,
+          groupNames: selectedGroupNames,        // ← también aquí
           asignadoA,
           createdAt: serverTimestamp()
         }
       };
       await updateDoc(escRef, { accessCodes: updatedAccess });
 
+      // Invalida cache para esa escuela (por si cambiaron grupos)
+      delete GROUP_NAME_CACHE[schoolId];
+
       return code;
+    }
+
+    // Eliminar código: borra accesos/{code} y lo quita del mapa accessCodes de la escuela
+    async function deleteAccessCode(schoolId, code){
+      // 1) Borrar doc global
+      await deleteDoc(doc(db, 'accesos', code));
+
+      // 2) Quitar del mapa de la escuela
+      const escRef = doc(db, `maestros/${CURRENT_CODE}/escuelas/${schoolId}`);
+      const escSnap = await getDoc(escRef);
+      if(escSnap.exists()){
+        const data = escSnap.data() || {};
+        const map  = { ...(data.accessCodes || {}) };
+        delete map[code];
+        await updateDoc(escRef, { accessCodes: map });
+      }
     }
 
     // Eventos
@@ -350,16 +426,17 @@
     // ==== INICIO ====
     (async function init(){
       CURRENT_CODE = getMaestroCodeFromSession();
-      setSessionInfo();
-
       if (!CURRENT_CODE){
+        setSessionInfo(); // mostrará el aviso sin código
         addBtn.disabled = true;
         emptyEl.style.display = 'block';
         emptyEl.textContent = 'Regresa a Inicio e ingresa tu CÓDIGO DE MAESTRO.';
         return;
       }
 
-      await ensureMaestroDoc(CURRENT_CODE); // opcional pero recomendado
+      await ensureMaestroDoc(CURRENT_CODE); // crea doc si falta y lee MAESTRO_NAME
+      setSessionInfo();
+
       addBtn.disabled = false;
       wireEvents();
       subscribeSchoolsForCode(CURRENT_CODE);
