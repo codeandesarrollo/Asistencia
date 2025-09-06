@@ -11,12 +11,25 @@
     .container{ max-width:720px; margin:0 auto; padding:20px; }
     .btn{ display:inline-block; background:linear-gradient(135deg,#4A90E2,#3A80D2); color:#fff; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-size:15px; text-decoration:none; transition:.2s; }
     .btn:hover{ filter:brightness(1.05); }
+    .btn-outline{ background:#fff; color:#2E5FAA; border:1px solid #2E5FAA; }
+    .btn[disabled]{ opacity:.6; cursor:not-allowed; }
     .card{ background:#fff; border-radius:12px; padding:16px; margin-bottom:16px; box-shadow:0 3px 10px rgba(0,0,0,.08); }
     .form-control{ width:100%; padding:12px; border:1px solid #ddd; border-radius:8px; font-size:16px; margin-bottom:10px; }
     .school{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:14px; border:1px solid #eee; border-radius:10px; background:linear-gradient(135deg,#f8f9fa,#eef2f6); margin-bottom:10px; }
     .school h3{ font-size:18px; margin:0; }
-    .actions{ display:flex; gap:8px; flex-wrap:wrap; }
-    .empty{ text-align:center; color:#6c757d; padding:24px 8px; }
+    .meta{ color:#666; font-size:13px; margin-top:4px; }
+    .actions{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .code-pill{ background:#eef2ff; color:#2E5FAA; padding:6px 10px; border-radius:999px; font-weight:600; font-size:13px; margin:2px; display:inline-block; }
+
+    /* Modal */
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000; }
+    .modal { background: white; border-radius: 12px; padding: 20px; width: 90%; max-width: 560px; max-height: 84vh; overflow-y: auto; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+    .modal h3 { margin-bottom: 10px; }
+    .modal .sub { color:#6b7280; font-size: 13px; margin-bottom: 10px; }
+    .group-checkbox { margin: 8px 0; display: flex; align-items: center; }
+    .group-checkbox input { margin-right: 10px; }
+    .modal-actions { margin-top: 16px; display: flex; justify-content: flex-end; gap: 10px; }
+    .hint { color:#6b7280; font-size:12px; margin-top:6px; }
   </style>
 </head>
 <body>
@@ -25,30 +38,48 @@
   </header>
 
   <div class="container">
-    <!-- Botón volver -->
     <a class="btn" href="./index.html">← Inicio</a>
 
-    <!-- Alta de escuela -->
     <div class="card">
       <h2>Agregar escuela</h2>
       <input id="schoolName" class="form-control" placeholder="Nombre de la escuela">
       <button id="addBtn" class="btn">Agregar</button>
+      <div id="sessionInfo" class="meta" style="margin-top:8px;"></div>
     </div>
 
-    <!-- Listado -->
     <div class="card">
       <h2>Tus escuelas</h2>
       <div id="list"></div>
-      <div id="empty" class="empty" style="display:none;">No hay escuelas registradas.</div>
+      <div id="empty" class="meta" style="display:none; text-align:center;">No hay escuelas registradas.</div>
+    </div>
+  </div>
+
+  <!-- Modal para seleccionar grupos y capturar nombre -->
+  <div id="groupModal" class="modal-backdrop">
+    <div class="modal">
+      <h3>Generar código de acceso</h3>
+      <div class="sub">Selecciona los grupos a los que tendrá acceso y escribe el nombre de la persona.</div>
+
+      <label for="asignadoA"><b>Nombre de quien tendrá acceso*</b></label>
+      <input id="asignadoA" class="form-control" placeholder="Ej. Profa. Ana López" />
+      <div class="hint">Este nombre aparecerá vinculado al código.</div>
+
+      <h4 style="margin-top:12px;">Grupos</h4>
+      <div id="groupList"></div>
+
+      <div class="modal-actions">
+        <button id="cancelBtn" class="btn btn-outline">Cancelar</button>
+        <button id="generateCodeBtn" class="btn">Generar código</button>
+      </div>
     </div>
   </div>
 
   <!-- Firebase (CDN) -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { 
-      getFirestore, collection, addDoc, doc, serverTimestamp, 
-      onSnapshot, query, orderBy 
+    import {
+      getFirestore, collection, addDoc, doc, setDoc, updateDoc, serverTimestamp,
+      onSnapshot, query, orderBy, getDoc, getDocs
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     // === Config de tu proyecto ===
@@ -70,49 +101,116 @@
     const emptyEl   = document.getElementById('empty');
     const addBtn    = document.getElementById('addBtn');
     const nameInput = document.getElementById('schoolName');
+    const sessionInfo = document.getElementById('sessionInfo');
 
-    // Render listado
+    // Modal refs
+    const groupModal = document.getElementById('groupModal');
+    const groupList  = document.getElementById('groupList');
+    const cancelBtn  = document.getElementById('cancelBtn');
+    const generateCodeBtn = document.getElementById('generateCodeBtn');
+    const asignadoAInput  = document.getElementById('asignadoA');
+
+    // Estado
+    let currentSchoolId = null;
+    let groups = [];
+    let CURRENT_CODE = null;      // código de maestro (sin Auth)
+    let unsubscribeSchools = null;
+
+    // ==== Helpers de sesión por CÓDIGO ====
+    function getMaestroCodeFromSession(){
+      return (sessionStorage.getItem('maestroCode') || '').trim();
+    }
+    function setSessionInfo(){
+      if (CURRENT_CODE){
+        sessionInfo.style.display = 'block';
+        sessionInfo.textContent = `Sesión por CÓDIGO ✔ (maestro: ${CURRENT_CODE})`;
+      } else {
+        sessionInfo.style.display = 'block';
+        sessionInfo.textContent = 'Sin código de maestro. Regresa a Inicio e ingrésalo.';
+      }
+    }
+
+    // ==== Helpers UI ====
+    function displayNameFromGroup(g){
+      return (g.nombre ?? g.name ?? g.titulo ?? g.displayName ?? g.id).toString();
+    }
+
+    // Render listado de escuelas con códigos existentes
     function renderSchools(items){
       listEl.innerHTML = '';
-      if(!items.length){
-        emptyEl.style.display = 'block';
-        return;
-      }
-      emptyEl.style.display = 'none';
+      emptyEl.style.display = items.length ? 'none' : 'block';
 
-      items.forEach(s=>{
+      items.forEach(school => {
         const row = document.createElement('div');
         row.className = 'school';
+
+        const codes = school.accessCodes || {}; // { code: { grupos, asignadoA, createdAt } }
+        const codesHtml = Object.keys(codes).length
+          ? Object.entries(codes).map(([code, info]) => {
+              const gruposTxt = Array.isArray(info.grupos) && info.grupos.length ? info.grupos.join(', ') : '—';
+              const asignado  = info.asignadoA ? `Para: ${info.asignadoA}` : 'Sin nombre';
+              const title = `${asignado} | Grupos: ${gruposTxt}`;
+              return `<span class="code-pill" title="${title}">Código: ${code}</span>`;
+            }).join('')
+          : '<span class="meta">Sin códigos aún</span>';
+
         row.innerHTML = `
           <div>
-            <h3>${s.name || '(Sin nombre)'}</h3>
+            <h3>${school.name || '(Sin nombre)'}</h3>
+            <div class="meta">ID: ${school.id}</div>
+            <div class="meta" style="margin-top:6px">${codesHtml}</div>
           </div>
           <div class="actions">
-            <a class="btn" href="./escuela.html?sid=${s.id}">Administrar</a>
+            <a class="btn" href="./grupos.html?sid=${school.id}">Administrar</a>
+            <button class="btn btn-outline" data-gen="${school.id}">Generar código</button>
           </div>
         `;
         listEl.appendChild(row);
       });
+
+      // Botón "Generar código"
+      listEl.querySelectorAll('button[data-gen]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          currentSchoolId = btn.getAttribute('data-gen');
+          await loadGroups(currentSchoolId);
+          openModal();
+        });
+      });
     }
 
-    // Suscripción en tiempo real
-    function subscribeSchools(){
-      const col  = collection(db, 'escuelas');
+    // ====== ANIDADOS: maestros/{codigo}/escuelas ======
+
+    // Garantiza que exista el doc maestro (opcional, útil para consola/reglas)
+    async function ensureMaestroDoc(codigo){
+      const maestroRef = doc(db, 'maestros', codigo);
+      const snap = await getDoc(maestroRef);
+      if(!snap.exists()){
+        await setDoc(maestroRef, {
+          createdAt: serverTimestamp()
+        }, { merge: true });
+      }
+    }
+
+    // Suscripción en tiempo real de escuelas del maestro
+    function subscribeSchoolsForCode(codigo){
+      if (unsubscribeSchools) { unsubscribeSchools(); unsubscribeSchools = null; }
+      const col  = collection(db, `maestros/${codigo}/escuelas`);
       const qy   = query(col, orderBy('createdAt','desc'));
-      onSnapshot(qy, snap=>{
-        const items = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+      unsubscribeSchools = onSnapshot(qy, snap => {
+        const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         renderSchools(items);
       });
     }
 
-    // Agregar escuela
-    async function addSchool(){
+    // Agregar escuela bajo el maestro
+    async function addSchoolWithCode(codigo){
       const name = nameInput.value.trim();
       if(!name){ alert('Escribe el nombre de la escuela.'); return; }
       try{
-        await addDoc(collection(db,'escuelas'), {
+        await addDoc(collection(db, `maestros/${codigo}/escuelas`), {
           name,
-          createdAt: serverTimestamp()
+          createdAt: serverTimestamp(),
+          accessCodes: {}
         });
         nameInput.value = '';
       }catch(e){
@@ -121,14 +219,151 @@
       }
     }
 
-    // Eventos
-    addBtn.addEventListener('click', addSchool);
-    nameInput.addEventListener('keyup', (e)=>{
-      if(e.key==='Enter') addSchool();
+    // Cargar grupos de una escuela (subcolección anidada)
+    async function loadGroups(schoolId) {
+      try {
+        const groupsQuery = query(collection(db, `maestros/${CURRENT_CODE}/escuelas/${schoolId}/grupos`));
+        const querySnapshot = await getDocs(groupsQuery);
+        groups = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                                   .sort((a,b)=> displayNameFromGroup(a).localeCompare(displayNameFromGroup(b)));
+
+        // Render checkboxes
+        groupList.innerHTML = '';
+        if(!groups.length){
+          groupList.innerHTML = `<div class="meta">Esta escuela no tiene grupos creados.</div>`;
+          generateCodeBtn.disabled = true;
+          return;
+        }
+        generateCodeBtn.disabled = false;
+
+        groups.forEach(group => {
+          const nombre = displayNameFromGroup(group);
+          const checkboxDiv = document.createElement('div');
+          checkboxDiv.className = 'group-checkbox';
+          checkboxDiv.innerHTML = `
+            <input type="checkbox" id="group-${group.id}" value="${group.id}" data-nombre="${nombre.replace(/"/g,'&quot;')}" checked>
+            <label for="group-${group.id}">${nombre} <span class="meta">(${group.id})</span></label>
+          `;
+          groupList.appendChild(checkboxDiv);
+        });
+      } catch (error) {
+        console.error("Error cargando grupos:", error);
+        alert("Error al cargar los grupos");
+      }
+    }
+
+    // Modal
+    function openModal(){ 
+      asignadoAInput.value = '';
+      groupModal.style.display = 'flex';
+      asignadoAInput.focus();
+    }
+    function closeModal(){ groupModal.style.display = 'none'; }
+    cancelBtn.addEventListener('click', closeModal);
+
+    // Generar código con nombre + grupos
+    generateCodeBtn.addEventListener('click', async () => {
+      const asignadoA = (asignadoAInput.value || '').trim();
+      if(!asignadoA){
+        alert('Escribe el nombre de quien tendrá acceso.');
+        asignadoAInput.focus();
+        return;
+      }
+
+      const selected = Array.from(groupList.querySelectorAll('input[type="checkbox"]:checked'));
+      if(!selected.length){
+        alert('Selecciona al menos un grupo.');
+        return;
+      }
+      const selectedIds   = selected.map(i => i.value);
+      const selectedNames = selected.map(i => i.dataset.nombre || i.value);
+
+      generateCodeBtn.disabled = true;
+      try {
+        const code = await generateAccessCodeWithGroups(currentSchoolId, selectedIds, asignadoA);
+        closeModal();
+
+        const listaNombres = selectedNames.map(n => `- ${n}`).join('\n');
+        try {
+          await navigator.clipboard.writeText(code);
+          alert(`Código generado: ${code}\nAsignado a: ${asignadoA}\nGrupos:\n${listaNombres}\n\n(Ya se copió el código al portapapeles)`);
+        } catch {
+          alert(`Código generado: ${code}\nAsignado a: ${asignadoA}\nGrupos:\n${listaNombres}\n\n(Cópialo manualmente si lo necesitas)`);
+        }
+      } catch (e) {
+        console.error(e);
+        alert(e?.message || 'No se pudo generar el código.');
+      } finally {
+        generateCodeBtn.disabled = false;
+      }
     });
 
-    // Iniciar
-    subscribeSchools();
+    // Guardado en Firestore (anidado + accesos globales)
+    async function generateAccessCodeWithGroups(schoolId, selectedGroups, asignadoA){
+      // doc de la escuela anidado
+      const escRef = doc(db, `maestros/${CURRENT_CODE}/escuelas/${schoolId}`);
+      const escSnap = await getDoc(escRef);
+      if(!escSnap.exists()) throw new Error('La escuela no existe.');
+
+      // Generar código único (0000-9999) y guardar en colección global 'accesos'
+      let code = null;
+      for (let i = 0; i < 25; i++){
+        const candidate = String(Math.floor(Math.random()*10000)).padStart(4,'0');
+        const codeRef = doc(db, 'accesos', candidate);
+        const codeSnap = await getDoc(codeRef);
+        if(!codeSnap.exists()){
+          code = candidate;
+          await setDoc(codeRef, {
+            maestroCode: CURRENT_CODE,
+            escuelaId: schoolId,
+            grupos: selectedGroups,
+            asignadoA,
+            activo: true,
+            createdAt: serverTimestamp()
+          });
+          break;
+        }
+      }
+      if(!code) throw new Error('No se pudo generar un código único, intenta de nuevo.');
+
+      // Espejo en la escuela para listar chips
+      const schoolData = escSnap.data() || {};
+      const updatedAccess = {
+        ...(schoolData.accessCodes || {}),
+        [code]: {
+          grupos: selectedGroups,
+          asignadoA,
+          createdAt: serverTimestamp()
+        }
+      };
+      await updateDoc(escRef, { accessCodes: updatedAccess });
+
+      return code;
+    }
+
+    // Eventos
+    function wireEvents(){
+      addBtn.onclick = () => addSchoolWithCode(CURRENT_CODE);
+      nameInput.addEventListener('keyup', e => { if(e.key === 'Enter') addBtn.click(); });
+    }
+
+    // ==== INICIO ====
+    (async function init(){
+      CURRENT_CODE = getMaestroCodeFromSession();
+      setSessionInfo();
+
+      if (!CURRENT_CODE){
+        addBtn.disabled = true;
+        emptyEl.style.display = 'block';
+        emptyEl.textContent = 'Regresa a Inicio e ingresa tu CÓDIGO DE MAESTRO.';
+        return;
+      }
+
+      await ensureMaestroDoc(CURRENT_CODE); // opcional pero recomendado
+      addBtn.disabled = false;
+      wireEvents();
+      subscribeSchoolsForCode(CURRENT_CODE);
+    })();
   </script>
 </body>
 </html>

@@ -54,10 +54,13 @@
 <!-- Firebase Firestore -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getFirestore, collection, addDoc, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import {
+    getFirestore, collection, addDoc, getDocs, serverTimestamp,
+    doc, getDoc, collectionGroup
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
   // Config
-  const firebaseConfig = {
+  const app = initializeApp({
     apiKey: "AIzaSyBEIeZz3HeU-8EVirVx9JAYnGbBegh1Uh4",
     authDomain: "maestros-7faa6.firebaseapp.com",
     projectId: "maestros-7faa6",
@@ -65,8 +68,7 @@
     messagingSenderId: "328284079222",
     appId: "1:328284079222:web:f0ab5c3443469d145d4b57",
     measurementId: "G-YKBQD9EJH3"
-  };
-  const app = initializeApp(firebaseConfig);
+  });
   const db  = getFirestore(app);
 
   // Contexto + botones
@@ -74,9 +76,7 @@
   const sid = p.get('sid');
   const gid = p.get('gid');
 
-  // Ir a tomar asistencia cuando termine
   const tomarURL = `tomarlista.html?sid=${encodeURIComponent(sid||'')}&gid=${encodeURIComponent(gid||'')}`;
-  // Regresar al menú del grupo
   const btnBack = document.getElementById('btnBack');
   btnBack.href = `opcionesgrupo.html?sid=${encodeURIComponent(sid||'')}&gid=${encodeURIComponent(gid||'')}`;
 
@@ -88,14 +88,14 @@
   function showMsg(html, kind='info'){
     msg.style.display='block';
     msg.className = `msg ${kind==='ok'?'ok':kind==='err'?'err':'info'}`;
-    msg.innerHTML = html; // permitimos botón/enlaces
+    msg.innerHTML = html;
   }
 
   if(!sid || !gid){
     showMsg('Faltan parámetros (?sid y ?gid). La importación está deshabilitada.','err');
   }
 
-  // Drag & drop visual correcto
+  // Drag & drop visual
   ['dragenter','dragover'].forEach(ev=>{
     drop.addEventListener(ev, (e)=>{ e.preventDefault(); e.stopPropagation(); drop.classList.add('highlight'); }, false);
   });
@@ -113,49 +113,56 @@
     if(val == null) return false;
     const s = String(val).trim();
     if(!s) return false;
-    // Debe contener letras (no solo dígitos/símbolos)
-    if(!LETTER_RE.test(s)) return false;
-    // Si más del 70% son dígitos, probablemente no es nombre
+    if(!LETTER_RE.test(s)) return false;          // debe tener letras
     const digits = (s.match(/[0-9]/g)||[]).length;
-    if(digits / s.length > 0.7) return false;
-    // Demasiado corto (1 char) suele ser inicial/código
+    if(digits / s.length > 0.7) return false;     // evitar códigos
     if(s.length < 2) return false;
     return true;
   }
 
-  // Devuelve el índice de la mejor columna candidata a "nombre"
   function detectNameColumn(rows2D){
     if(!rows2D.length) return 0;
     const headers = rows2D[0] || [];
-    // 1) Preferir encabezado conocido
     let bestByHeader = -1;
-    headers.forEach((h,idx)=>{
-      if(typeof h === 'string' && NAME_HEADER_RE.test(h.trim())) bestByHeader = idx;
-    });
+    headers.forEach((h,idx)=>{ if(typeof h === 'string' && NAME_HEADER_RE.test(h.trim())) bestByHeader = idx; });
     if(bestByHeader >= 0) return bestByHeader;
 
-    // 2) Scoring por contenido de "tipo nombre" en primeras N filas
-    const sampleStart = 0; // si hay encabezado, la fila 0 será header; igual sirve
-    const sampleEnd = Math.min(rows2D.length, 50); // 50 filas de muestra
+    const sampleEnd = Math.min(rows2D.length, 50);
     const colCount = Math.max(...rows2D.map(r=>r.length));
     let bestIdx = 0, bestScore = -1;
-
     for(let c=0;c<colCount;c++){
       let score = 0;
-      for(let r=sampleStart;r<sampleEnd;r++){
+      for(let r=0;r<sampleEnd;r++){
         const val = rows2D[r]?.[c];
         if(isLikelyName(val)) score++;
       }
-      if(score > bestScore){
-        bestScore = score; bestIdx = c;
-      }
+      if(score > bestScore){ bestScore = score; bestIdx = c; }
     }
     return bestIdx;
   }
   // -----------------------------------------------
 
+  // === Resolver m a partir de sid (sin session y sin m en URL)
+  async function resolveMaestroBySchoolId(sid){
+    // Tomamos todas las escuelas y filtramos por ID; luego leemos el padre maestros/{m}
+    const cg = await getDocs(collectionGroup(db, 'escuelas'));
+    const found = cg.docs.find(d => d.id === sid);
+    if (!found) return null;
+    return found.ref.parent.parent?.id || null; // maestros/{m}
+  }
+
+  let m = null; // maestro resuelto
+
   async function handleFile(f){
     if(!sid || !gid){ showMsg('No se puede importar sin ?sid y ?gid en la URL.','err'); return; }
+
+    // Resuelve m si aún no lo tenemos
+    if(!m){
+      showMsg('Resolviendo escuela…','info');
+      m = await resolveMaestroBySchoolId(sid);
+      if(!m){ showMsg('No se encontró la escuela bajo ningún maestro.','err'); return; }
+    }
+
     try{
       showMsg('Leyendo archivo…','info');
       const ab = await f.arrayBuffer();
@@ -164,26 +171,19 @@
       const arr = XLSX.utils.sheet_to_json(ws, {header:1, raw:true}); // [[c0,c1,..], ...]
       if(!arr.length){ showMsg('El archivo está vacío.','err'); return; }
 
-      // Detectar la columna que parece "nombres"
       const nameCol = detectNameColumn(arr);
-
-      // Armar lista de nombres desde esa columna
       let nombres = arr.map(r => (r[nameCol]!==undefined ? String(r[nameCol]).trim() : ''));
-
-      // Si la primera celda es encabezado "nombre*", omitirla
       if(nombres.length && NAME_HEADER_RE.test(String(nombres[0]).trim())) nombres = nombres.slice(1);
-
-      // Filtrar vacíos y que realmente parezcan nombres
       nombres = nombres.filter(n => isLikelyName(n));
-
       if(!nombres.length){
         showMsg('No se detectaron nombres válidos. Verifica que tu archivo tenga una columna con nombres.','err');
         return;
       }
 
-      // Evitar duplicados existentes
       showMsg('Importando a Firebase…','info');
-      const snap = await getDocs(collection(db,'escuelas',sid,'grupos',gid,'alumnos'));
+
+      // EXISTENTES (anidado)
+      const snap = await getDocs(collection(db,'maestros',m,'escuelas',sid,'grupos',gid,'alumnos'));
       const existentes = new Set();
       snap.forEach(d=>{ const nm=(d.data().name||'').trim().toLowerCase(); if(nm) existentes.add(nm); });
 
@@ -192,27 +192,31 @@
         const key = nombre.toLowerCase();
         if(existentes.has(key)){ skipped++; continue; }
         try{
-          await addDoc(collection(db,'escuelas',sid,'grupos',gid,'alumnos'), { name:nombre, createdAt: serverTimestamp() });
+          await addDoc(collection(db,'maestros',m,'escuelas',sid,'grupos',gid,'alumnos'), {
+            name:nombre,
+            createdAt: serverTimestamp()
+          });
           existentes.add(key); added++;
-        }catch(e){ skipped++; console.error('Error agregando', nombre, e); }
+        }catch(e){
+          skipped++; console.error('Error agregando', nombre, e);
+        }
       }
 
-      // Mensaje de éxito + CTA a tomarlista.html
       showMsg(`
-        <div><strong>Lista subida correctamente</strong> ✅</div>
-        <div>Ya puedes <strong>tomar asistencia</strong>.</div>
-        <div class="actions">
+        <div><strong>Lista subida</strong> ✅</div>
+        <div>Agregados: <b>${added}</b> · Omitidos (duplicados/errores): <b>${skipped}</b></div>
+        <div class="actions" style="margin-top:8px">
           <a class="btn" href="${tomarURL}">Ir a Tomar Asistencia</a>
           <a class="btn btn-outline" href="${btnBack.href}">Regresar al menú</a>
         </div>
         <div style="margin-top:6px;font-size:12px;opacity:.8">
-          Los alumnos ya están guardados en Firebase y se mostrarán en <code>tomarlista.html</code>.
+          Guardado en <code>maestros/${m}/escuelas/${sid}/grupos/${gid}/alumnos</code>.
         </div>
       `,'ok');
 
     }catch(err){
       console.error(err);
-      showMsg('Ocurrió un error al leer/importar el archivo.','err');
+      showMsg('Ocurrió un error al leer/importar el archivo. Revisa la consola.', 'err');
     }
   }
 </script>

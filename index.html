@@ -12,28 +12,15 @@
     .welcome-message{ text-align:center; margin:40px 0; }
     .welcome-icon{ font-size:60px; margin-bottom:20px; color:#4A90E2; }
     .card{ background:#fff; border-radius:10px; padding:15px; margin-bottom:20px; box-shadow:0 3px 10px rgba(0,0,0,0.08); text-align:center; }
-    .btn{ display:block; text-align:center; background:linear-gradient(135deg,#4A90E2,#3A80D2); color:#fff; border:none; padding:12px 20px; border-radius:8px; cursor:pointer; font-size:16px; text-decoration:none; transition:.2s; margin-bottom: 10px; }
+    .btn{ display:block; text-align:center; background:linear-gradient(135deg,#4A90E2,#3A80D2); color:#fff; border:none; padding:12px 20px; border-radius:8px; cursor:pointer; font-size:16px; text-decoration:none; transition:.2s; margin-bottom:10px; }
     .btn[aria-disabled="true"]{ opacity:.6; pointer-events:none; }
     .btn:hover{ filter:brightness(1.05); }
     .btn-secondary { background:linear-gradient(135deg, #6c757d, #5a6268); }
-    .error-details { background-color: #f8d7da; color: #721c24; padding: 15px; border-radius: 5px; margin: 15px 0; text-align: left; font-size: 14px; }
-    .instructions { background-color: #e2e3e5; color: #383d41; padding: 15px; border-radius: 5px; margin: 15px 0; text-align: left; font-size: 14px; }
-    .status-success { color: green; }
-    .status-error { color: red; }
+    .status-error { color: red; margin-top:10px; }
     .hidden { display: none; }
-    .spinner {
-      border: 3px solid #f3f3f3;
-      border-top: 3px solid #3498db;
-      border-radius: 50%;
-      width: 20px;
-      height: 20px;
-      animation: spin 1s linear infinite;
-      margin: 0 auto;
-    }
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
+    input{ width:100%; padding:10px; border:1px solid #ccc; border-radius:8px; margin-top:8px; font-size:15px }
+    input:focus{ outline:none; border-color:#4A90E2; box-shadow:0 0 0 2px rgba(74,144,226,.3) }
+    .hint{ color:#6b7280; font-size:13px; margin-top:6px }
   </style>
 </head>
 <body>
@@ -45,58 +32,34 @@
     <!-- Bienvenida -->
     <div class="welcome-message">
       <div class="welcome-icon">🏫</div>
-      <h2>Bienvenido Maestro</h2>
-      <p>Gestiona la asistencia de tus escuelas y grupos</p>
+      <h2 id="bienvenida">Bienvenido Maestro</h2>
+      <p id="bienvenidaTexto">Ingresa tu código para continuar</p>
     </div>
 
-    <!-- Estado Firebase -->
-    <div id="fbStatus" class="card">
-      <div id="statusMessage">Conectando con Firebase…</div>
-      <div id="statusSpinner" class="spinner"></div>
+    <!-- Ingreso de código -->
+    <div class="card" id="codigoCard">
+      <label for="codigo">Código</label>
+      <input id="codigo" placeholder="Escribe tu código aquí"/>
+      <button id="btnValidar" class="btn">Validar código</button>
+      <div class="hint">
+        • Si es <b>código de escuela</b> te enviará a tomar lista (grupo).<br>
+        • Si es <b>código de maestro</b> podrás administrar <i>solo tus</i> escuelas.
+      </div>
+      <div id="errorCodigo" class="status-error hidden">❌ Código inválido</div>
     </div>
 
-    <!-- Detalles del error (inicialmente ocultos) -->
-    <div id="errorDetails" class="error-details hidden">
-      <h3>Error de conexión:</h3>
-      <p id="errorMessage"></p>
-    </div>
-
-    <!-- Instrucciones para resolver el problema -->
-    <div id="instructions" class="instructions hidden">
-      <h3>¿Cómo solucionar este problema?</h3>
-      <ol>
-        <li>Ve a la <a href="https://console.firebase.google.com/" target="_blank">consola de Firebase</a></li>
-        <li>Selecciona tu proyecto</li>
-        <li>Ve a Firestore Database → Reglas</li>
-        <li>Actualiza las reglas para permitir acceso (solo para desarrollo):</li>
-        <pre>
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
-    }
-  }
-}
-        </pre>
-        <li>Haz clic en Publicar</li>
-        <li>Vuelve a esta página y <a href="javascript:window.location.reload()">recarga</a></li>
-      </ol>
-      <p><strong>Nota:</strong> Estas reglas permiten acceso completo a cualquier usuario. Para producción, implementa reglas de seguridad más estrictas.</p>
-    </div>
-
-    <!-- Botones de acción -->
+    <!-- Botones de acción (solo para maestros) -->
     <a id="goEscuelas" class="btn" href="./escuelas.html" aria-disabled="true">Ir a Escuelas</a>
-    <button id="retryButton" class="btn btn-secondary hidden">Reintentar conexión</button>
+    <button id="btnSalir" class="btn btn-secondary hidden">Salir</button>
   </div>
 
-  <!-- Firebase + Firestore + Analytics (SDK modular vía CDN) -->
+  <!-- Firebase + Firestore -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getFirestore, doc, setDoc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-    import { getAnalytics, isSupported as analyticsSupported } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics.js";
+    import {
+      getFirestore, doc, getDoc
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-    // === Config de TU proyecto (integrada) ===
     const firebaseConfig = {
       apiKey: "AIzaSyBEIeZz3HeU-8EVirVx9JAYnGbBegh1Uh4",
       authDomain: "maestros-7faa6.firebaseapp.com",
@@ -107,84 +70,130 @@ service cloud.firestore {
       measurementId: "G-YKBQD9EJH3"
     };
 
-    // Inicializar Firebase
     const app = initializeApp(firebaseConfig);
     const db  = getFirestore(app);
 
-    // Analytics (seguro: solo si es soportado)
-    try {
-      if (await analyticsSupported()) {
-        getAnalytics(app);
-      }
-    } catch (e) {
-      // Ignorar si no hay HTTPS / entorno no soportado
-      console.warn("Analytics no disponible:", e?.message || e);
-    }
+    const codigoInput   = document.getElementById("codigo");
+    const btnValidar    = document.getElementById("btnValidar");
+    const errorCodigo   = document.getElementById("errorCodigo");
+    const goBtn         = document.getElementById("goEscuelas");
+    const btnSalir      = document.getElementById("btnSalir");
+    const codigoCard    = document.getElementById("codigoCard");
+    const bienvenida    = document.getElementById("bienvenida");
+    const bienvenidaTxt = document.getElementById("bienvenidaTexto");
 
-    // UI refs
-    const fbStatus = document.getElementById("fbStatus");
-    const statusMessage = document.getElementById("statusMessage");
-    const statusSpinner = document.getElementById("statusSpinner");
-    const errorDetails = document.getElementById("errorDetails");
-    const errorMessage = document.getElementById("errorMessage");
-    const instructions = document.getElementById("instructions");
-    const goBtn = document.getElementById("goEscuelas");
-    const retryButton = document.getElementById("retryButton");
+    // Normaliza a mayúsculas y sin espacios alrededor
+    const norm = (v)=> (v||"").trim().toUpperCase();
 
-    // Probar Firestore escribiendo/leyendo un doc
-    async function pingFirestore(){
-      try{
-        const ref = doc(db, "__meta", "ping");
-        await setDoc(ref, { lastPing: serverTimestamp() }, { merge:true });
-        const snap = await getDoc(ref);
-        return { success: true, data: snap.exists() };
-      }catch(e){
-        console.error("Firestore ping error:", e);
-        return { success: false, error: e };
-      }
-    }
-
-    // Actualizar UI basado en el resultado
-    function updateUI(result) {
-      statusSpinner.classList.add('hidden');
-      
-      if (result.success) {
-        statusMessage.textContent = "Firebase conectado correctamente ✔";
-        statusMessage.classList.add('status-success');
+    // Reconstruir sesión si ya inició como maestro
+    (function hydrateFromSession(){
+      const maestroCode = sessionStorage.getItem('maestroCode');
+      const maestroNombre = sessionStorage.getItem('maestroNombre');
+      if(maestroCode){
+        bienvenida.textContent = `Bienvenido Maestro ${maestroNombre || ''}`.trim();
+        bienvenidaTxt.textContent = "Puedes continuar a tus escuelas";
         goBtn.setAttribute("aria-disabled","false");
-      } else {
-        statusMessage.textContent = "Error de conexión con Firestore";
-        statusMessage.classList.add('status-error');
-        
-        // Mostrar detalles del error
-        errorMessage.textContent = result.error.message || "Error desconocido";
-        errorDetails.classList.remove('hidden');
-        
-        // Mostrar instrucciones para permisos
-        instructions.classList.remove('hidden');
-        
-        // Mostrar botón de reintentar
-        retryButton.classList.remove('hidden');
+        btnSalir.classList.remove("hidden");
+        codigoCard.classList.add("hidden");
+      }
+    })();
+
+    async function validarCodigo(){
+      const codigo = norm(codigoInput.value);
+      errorCodigo.classList.add("hidden");
+      goBtn.setAttribute("aria-disabled","true");
+      btnSalir.classList.add("hidden");
+
+      if(!codigo){
+        errorCodigo.textContent = "⚠ Ingresa un código";
+        errorCodigo.classList.remove("hidden");
+        return;
+      }
+
+      btnValidar.disabled = true;
+
+      try{
+        // 1) Intentar como CÓDIGO DE ACCESO (escuela/grupos)
+        const accSnap = await getDoc(doc(db,"accesos", codigo));
+        if (accSnap.exists()){
+          const acc = accSnap.data() || {};
+          if (!acc.activo){
+            errorCodigo.textContent = "❌ Este código está inactivo.";
+            errorCodigo.classList.remove("hidden");
+            btnValidar.disabled = false;
+            return;
+          }
+          if (acc.escuelaId && Array.isArray(acc.grupos) && acc.grupos.length){
+            // Limpiar sesión de maestro y guardar code de acceso
+            sessionStorage.removeItem('maestroCode');
+            sessionStorage.removeItem('maestroNombre');
+            sessionStorage.setItem('accesoCode', codigo);
+
+            // Un solo grupo -> directo
+            if (acc.grupos.length === 1){
+              const gid = acc.grupos[0];
+              window.location.href =
+                `./tomarlista.html?sid=${encodeURIComponent(acc.escuelaId)}&gid=${encodeURIComponent(gid)}&code=${encodeURIComponent(codigo)}`;
+              return;
+            }
+            // Varios -> selector de grupos (grupos.html mostrará solo los permitidos por 'code')
+            window.location.href =
+              `./grupos.html?sid=${encodeURIComponent(acc.escuelaId)}&code=${encodeURIComponent(codigo)}`;
+            return;
+          }
+        }
+
+        // 2) Intentar como CÓDIGO DE MAESTRO (ID del doc = código)
+        const maestroSnap = await getDoc(doc(db, "maestros", codigo));
+        if (maestroSnap.exists()){
+          const maestro = maestroSnap.data() || {};
+          const nombre  = maestro.nombre || "Maestro";
+
+          // Guardar sesión de maestro (para filtrar escuelas por ownerCode)
+          sessionStorage.setItem('maestroCode', codigo);
+          sessionStorage.setItem('maestroNombre', nombre);
+          sessionStorage.removeItem('accesoCode');
+
+          // Actualizar UI
+          bienvenida.textContent = `Bienvenido Maestro ${nombre}`;
+          bienvenidaTxt.textContent = "Puedes continuar a tus escuelas";
+          goBtn.setAttribute("aria-disabled","false");
+          btnSalir.classList.remove("hidden");
+          codigoCard.classList.add("hidden");
+          btnValidar.disabled = false;
+          return;
+        }
+
+        // 3) Ninguno de los dos
+        errorCodigo.textContent = "❌ Código inválido";
+        errorCodigo.classList.remove("hidden");
+      }catch(e){
+        console.error(e);
+        errorCodigo.textContent = "⚠ Error al validar código";
+        errorCodigo.classList.remove("hidden");
+      }finally{
+        btnValidar.disabled = false;
       }
     }
 
-    // Función para probar la conexión
-    async function testConnection() {
-      statusSpinner.classList.remove('hidden');
-      statusMessage.textContent = "Conectando con Firebase…";
-      errorDetails.classList.add('hidden');
-      instructions.classList.add('hidden');
-      retryButton.classList.add('hidden');
-      
-      const result = await pingFirestore();
-      updateUI(result);
+    function salir(){
+      // resetear estado + limpiar sesión
+      bienvenida.textContent = "Bienvenido Maestro";
+      bienvenidaTxt.textContent = "Ingresa tu código para continuar";
+      goBtn.setAttribute("aria-disabled","true");
+      btnSalir.classList.add("hidden");
+      codigoCard.classList.remove("hidden");
+      codigoInput.value = "";
+
+      sessionStorage.removeItem('accesoCode');
+      sessionStorage.removeItem('maestroCode');
+      sessionStorage.removeItem('maestroNombre');
     }
 
-    // Configurar evento para el botón de reintentar
-    retryButton.addEventListener('click', testConnection);
-
-    // Iniciar prueba de conexión
-    testConnection();
+    // Eventos
+    btnValidar.addEventListener("click", validarCodigo);
+    codigoInput.addEventListener("keydown", e => { if(e.key==="Enter") validarCodigo(); });
+    btnSalir.addEventListener("click", salir);
   </script>
 </body>
 </html>

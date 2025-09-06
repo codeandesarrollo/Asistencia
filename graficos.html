@@ -21,7 +21,7 @@
   .btn-outline{border:1px solid var(--primary);color:var(--primary);background:#fff}
   .btn-primary{background:linear-gradient(135deg,var(--primary),#2E5FAA);color:#fff;border:1px solid transparent}
   .control{padding:10px;border:1px solid #dfe3ea;border-radius:10px;font-size:14px}
-  .muted{color:var(--muted);font-size:14px}
+  .muted{color:#6b7280;font-size:14px}
   .grid{display:grid;gap:16px;grid-template-columns:1fr}
   @media (min-width:1000px){ .grid{grid-template-columns:1.2fr .8fr} }
   .legend{display:flex;gap:12px;align-items:center;font-size:14px}
@@ -38,7 +38,6 @@
 </header>
 
 <div class="container">
-  <!-- Controles -->
   <div class="card">
     <div class="row">
       <div>
@@ -58,7 +57,6 @@
     <div id="status" class="muted" style="margin-top:8px"></div>
   </div>
 
-  <!-- Gráficas -->
   <div class="grid">
     <div class="card">
       <h3 style="margin-bottom:10px">Diario del mes (barras apiladas A/R/F)</h3>
@@ -80,16 +78,17 @@
   </div>
 </div>
 
-<!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-<!-- Firebase -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getFirestore, collection, getDocs, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import {
+    getFirestore, collection, getDocs, query, where, orderBy,
+    collectionGroup
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-  // --- Firebase Config ---
-  const firebaseConfig = {
+  // Firebase
+  const app = initializeApp({
     apiKey: "AIzaSyBEIeZz3HeU-8EVirVx9JAYnGbBegh1Uh4",
     authDomain: "maestros-7faa6.firebaseapp.com",
     projectId: "maestros-7faa6",
@@ -97,11 +96,10 @@
     messagingSenderId: "328284079222",
     appId: "1:328284079222:web:f0ab5c3443469d145d4b57",
     measurementId: "G-YKBQD9EJH3"
-  };
-  const app = initializeApp(firebaseConfig);
+  });
   const db  = getFirestore(app);
 
-  // --- Contexto ---
+  // Params
   const p = new URLSearchParams(location.search);
   const sid = p.get('sid');
   const gid = p.get('gid');
@@ -109,56 +107,48 @@
   document.getElementById('ctx').textContent = `Escuela: ${sid} · Grupo: ${gid}`;
   document.getElementById('btnBack').href = `opcionesgrupo.html?sid=${encodeURIComponent(sid)}&gid=${encodeURIComponent(gid)}`;
 
-  // --- Controles ---
+  // Resolver maestro m a partir de sid
+  async function resolveMaestroBySchoolId(sid){
+    const cg = await getDocs(collectionGroup(db, 'escuelas'));
+    const found = cg.docs.find(d => d.id === sid);
+    return found?.ref.parent.parent?.id || null;
+  }
+  let m = await resolveMaestroBySchoolId(sid);
+  if(!m){ alert('No se encontró la escuela bajo ningún maestro.'); }
+
+  // Controles
   const inputMes = document.getElementById('mes');
   const statusBox = document.getElementById('status');
   const btnRefrescar = document.getElementById('btnRefrescar');
   const btnExcel = document.getElementById('btnExcel');
 
-  // Mes actual por defecto
   const now = new Date();
   inputMes.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
 
-  // --- Charts refs ---
+  // Charts refs y estado para exportación
   let chartDaily, chartMonthly, chartAlumnos;
+  let lastAgg = { alumnos:[], byDay:{}, monthlyTotals:{A:0,R:0,F:0}, perAlumno:{}, allDays:[], ym:"" };
 
-  // --- Estado para exportación ---
-  let lastAgg = {
-    alumnos: [],
-    byDay: {},
-    monthlyTotals: {A:0,R:0,F:0},
-    perAlumno: {},
-    allDays: [],
-    ym: ""
-  };
-
-  // --- Helpers fecha ---
+  // Helpers
   function monthRange(ym){
     const [y,m] = ym.split('-').map(Number);
     const last  = new Date(y, m, 0);
-    const startStr = `${y}-${String(m).padStart(2,'0')}-01`;
-    const endStr   = `${y}-${String(m).padStart(2,'0')}-${String(last.getDate()).padStart(2,'0')}`;
-    return [startStr, endStr];
+    return [`${y}-${String(m).padStart(2,'0')}-01`, `${y}-${String(m).padStart(2,'0')}-${String(last.getDate()).padStart(2,'0')}`];
   }
-  function fmt(dateStr){ return dateStr.slice(8,10); }
+  const fmt = s => s.slice(8,10);
+  const COLOR_A='#22c55e', COLOR_R='#f59e0b', COLOR_F='#ef4444';
 
-  // --- Colores estados ---
-  const COLOR_A = '#22c55e';
-  const COLOR_R = '#f59e0b';
-  const COLOR_F = '#ef4444';
-
-  // --- Cargar datos ---
+  // Datos (ANIDADO bajo maestros/{m}…)
   async function fetchAlumnos(){
-    const snap = await getDocs(collection(db,'escuelas',sid,'grupos',gid,'alumnos'));
+    const snap = await getDocs(collection(db,'maestros',m,'escuelas',sid,'grupos',gid,'alumnos'));
     const alumnos = [];
     snap.forEach(d=> alumnos.push({id:d.id, name:d.data().name||''}));
     return alumnos;
   }
-
   async function fetchAsistenciasMes(ym){
     const [startStr, endStr] = monthRange(ym);
     const qref = query(
-      collection(db,'escuelas',sid,'grupos',gid,'asistencias'),
+      collection(db,'maestros',m,'escuelas',sid,'grupos',gid,'asistencias'),
       where('date','>=',startStr),
       where('date','<=',endStr),
       orderBy('date','asc')
@@ -166,13 +156,12 @@
     const snap = await getDocs(qref);
     const docs = [];
     snap.forEach(d=> docs.push({id:d.id, ...d.data()}));
-    return docs; // {date:'YYYY-MM-DD', registros:{alumnoId:'A'|'F'|'R'}}
+    return docs;
   }
 
   function aggregateMonthly(alumnos, asistenciasDocs){
     const totalStudents = alumnos.length;
     const alumnoIds = alumnos.map(a=>a.id);
-
     const byDay = {};
     const monthlyTotals = {A:0,F:0,R:0};
     const perAlumno = {};
@@ -182,14 +171,12 @@
       const d = rec.date;
       const regs = rec.registros || {};
       const dayCount = {A:0,F:0,R:0};
-
       alumnoIds.forEach(id=>{
         const v = String(regs[id] ?? 'A').toUpperCase();
         const val = (v==='A'||v==='F'||v==='R') ? v : 'A';
         dayCount[val] += 1;
         perAlumno[id][val] += 1;
       });
-
       byDay[d] = dayCount;
       monthlyTotals.A += dayCount.A;
       monthlyTotals.F += dayCount.F;
@@ -199,75 +186,49 @@
     return { byDay, monthlyTotals, perAlumno, totalStudents };
   }
 
-  // --- Render charts ---
+  // Render
   function renderDailyChart(canvas, byDay){
     const labels = Object.keys(byDay).sort();
-    const Adata = labels.map(d=> byDay[d].A);
-    const Rdata = labels.map(d=> byDay[d].R);
-    const Fdata = labels.map(d=> byDay[d].F);
-
     const data = {
       labels: labels.map(fmt),
       datasets: [
-        {label:'A', data:Adata, backgroundColor:COLOR_A, stack:'stack1'},
-        {label:'R', data:Rdata, backgroundColor:COLOR_R, stack:'stack1'},
-        {label:'F', data:Fdata, backgroundColor:COLOR_F, stack:'stack1'}
+        {label:'A', data:labels.map(d=>byDay[d].A), backgroundColor:COLOR_A, stack:'s'},
+        {label:'R', data:labels.map(d=>byDay[d].R), backgroundColor:COLOR_R, stack:'s'},
+        {label:'F', data:labels.map(d=>byDay[d].F), backgroundColor:COLOR_F, stack:'s'}
       ]
     };
-    const options = {
-      responsive:true,
-      scales:{ x:{ stacked:true }, y:{ stacked:true, beginAtZero:true } },
-      plugins:{ legend:{ display:true } }
-    };
-
+    const options = { responsive:true, scales:{ x:{stacked:true}, y:{stacked:true, beginAtZero:true} }, plugins:{legend:{display:true}} };
     if(chartDaily) chartDaily.destroy();
     chartDaily = new Chart(canvas.getContext('2d'), { type:'bar', data, options });
   }
-
   function renderMonthlyChart(canvas, totals){
-    const data = {
-      labels:['A','R','F'],
-      datasets:[{ data:[totals.A, totals.R, totals.F], backgroundColor:[COLOR_A, COLOR_R, COLOR_F] }]
-    };
+    const data = { labels:['A','R','F'], datasets:[{ data:[totals.A, totals.R, totals.F], backgroundColor:[COLOR_A,COLOR_R,COLOR_F] }] };
     const options = { responsive:true, plugins:{ legend:{ display:true } } };
-
     if(chartMonthly) chartMonthly.destroy();
     chartMonthly = new Chart(canvas.getContext('2d'), { type:'doughnut', data, options });
   }
-
   function renderAlumnosChart(canvas, alumnos, perAlumno){
     const labels = alumnos.map(a=> a.name || '(sin nombre)');
-    const Adata  = alumnos.map(a=> perAlumno[a.id]?.A || 0);
-    const Rdata  = alumnos.map(a=> perAlumno[a.id]?.R || 0);
-    const Fdata  = alumnos.map(a=> perAlumno[a.id]?.F || 0);
-
     const data = {
       labels,
       datasets:[
-        {label:'A', data:Adata, backgroundColor:COLOR_A, stack:'sa'},
-        {label:'R', data:Rdata, backgroundColor:COLOR_R, stack:'sa'},
-        {label:'F', data:Fdata, backgroundColor:COLOR_F, stack:'sa'}
+        {label:'A', data:alumnos.map(a=> perAlumno[a.id]?.A || 0), backgroundColor:COLOR_A, stack:'sa'},
+        {label:'R', data:alumnos.map(a=> perAlumno[a.id]?.R || 0), backgroundColor:COLOR_R, stack:'sa'},
+        {label:'F', data:alumnos.map(a=> perAlumno[a.id]?.F || 0), backgroundColor:COLOR_F, stack:'sa'}
       ]
     };
-    const options = {
-      indexAxis:'y',
-      responsive:true,
-      maintainAspectRatio:false,
-      scales:{ x:{ stacked:true, beginAtZero:true }, y:{ stacked:true } },
-      plugins:{ legend:{ display:true } }
-    };
-
+    const options = { indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      scales:{ x:{ stacked:true, beginAtZero:true }, y:{ stacked:true } }, plugins:{ legend:{ display:true } } };
     if(chartAlumnos) chartAlumnos.destroy();
     chartAlumnos = new Chart(canvas.getContext('2d'), { type:'bar', data, options });
   }
-
   function resumeText(totals, days, students){
     const totalMarcaciones = days * students;
-    const pct = (n)=> totalMarcaciones ? (n*100/totalMarcaciones).toFixed(1) : '0.0';
+    const pct = n => totalMarcaciones ? (n*100/totalMarcaciones).toFixed(1) : '0.0';
     return `Totales del mes · Marcaciones: ${totalMarcaciones} · A: ${totals.A} (${pct(totals.A)}%) · R: ${totals.R} (${pct(totals.R)}%) · F: ${totals.F} (${pct(totals.F)}%)`;
   }
 
-  // --- Orquestación ---
+  // Orquestación
   async function refresh(){
     try{
       statusBox.textContent = 'Cargando…';
@@ -275,24 +236,17 @@
 
       const alumnos = await fetchAlumnos();
       const docs = await fetchAsistenciasMes(ym);
-
       const { byDay, monthlyTotals, perAlumno, totalStudents } = aggregateMonthly(alumnos, docs);
 
       // Completar días del mes
-      const [y,m] = ym.split('-').map(Number);
-      const last = new Date(y, m, 0).getDate();
+      const [y,mn] = ym.split('-').map(Number);
+      const last = new Date(y, mn, 0).getDate();
       const allDays = [];
-      for(let d=1; d<=last; d++){
-        allDays.push(`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
-      }
-      allDays.forEach(ds=>{
-        if(!byDay[ds]) byDay[ds] = {A:0,R:0,F:0};
-      });
+      for(let d=1; d<=last; d++) allDays.push(`${y}-${String(mn).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+      allDays.forEach(ds=>{ if(!byDay[ds]) byDay[ds] = {A:0,R:0,F:0}; });
 
-      // Guardar estado
       lastAgg = { alumnos, byDay, monthlyTotals, perAlumno, allDays, ym };
 
-      // Render
       renderDailyChart(document.getElementById('chartDaily'), byDay);
       renderMonthlyChart(document.getElementById('chartMonthly'), monthlyTotals);
       renderAlumnosChart(document.getElementById('chartAlumnos'), alumnos, perAlumno);
@@ -300,8 +254,7 @@
       document.getElementById('resumeText').textContent =
         resumeText(monthlyTotals, Object.keys(byDay).length, totalStudents);
 
-      const diasConRegistro = docs.length;
-      statusBox.textContent = `Mes ${ym} · Alumnos: ${totalStudents} · Días con registro: ${diasConRegistro}`;
+      statusBox.textContent = `Mes ${ym} · Alumnos: ${totalStudents} · Días con registro: ${docs.length}`;
     }catch(err){
       console.error(err);
       statusBox.textContent = 'Error al cargar datos.';
@@ -309,61 +262,34 @@
     }
   }
 
-  /* ========= Ajuste CORS / file:// ========= */
+  // === Exportación (sin cambios)
   const API_BASE =
     (location.protocol === 'file:' || location.origin === 'null')
       ? 'https://asistencia-sage.vercel.app'
       : (location.host.includes('asistencia-sage.vercel.app') ? '' : 'https://asistencia-sage.vercel.app');
 
-  // === Exportación a Excel (gráficas nativas, vía API /api/export-excel) ===
-async function exportExcel(){
-  try{
-    if(!lastAgg || !lastAgg.alumnos.length){
-      alert('No hay datos para exportar. Da clic en “Actualizar” primero.');
-      return;
+  async function exportExcel(){
+    try{
+      if(!lastAgg || !lastAgg.alumnos.length){
+        alert('No hay datos para exportar. Da clic en “Actualizar” primero.');
+        return;
+      }
+      const payload = { sid, gid, ym:lastAgg.ym, alumnos:lastAgg.alumnos, allDays:lastAgg.allDays,
+                        byDay:lastAgg.byDay, monthlyTotals:lastAgg.monthlyTotals, perAlumno:lastAgg.perAlumno };
+      const url = `${API_BASE}/api/export-excel`;
+      const resp = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload), mode:'cors', credentials:'omit' });
+      if(!resp.ok){ const text = await resp.text().catch(()=> ''); console.error('[export-excel] HTTP', resp.status, text); alert(`Error exportando (${resp.status}).`); return; }
+      const blob = await resp.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `Asistencia_${sid}_${gid}_${lastAgg.ym}.xlsx`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=> URL.revokeObjectURL(a.href), 0);
+    }catch(err){
+      console.error('[export-excel] Failed:', err);
+      alert('No se pudo generar el Excel. Revisa la consola.');
     }
-
-    const payload = {
-      sid, gid, ym: lastAgg.ym,
-      alumnos: lastAgg.alumnos,
-      allDays: lastAgg.allDays,
-      byDay: lastAgg.byDay,
-      monthlyTotals: lastAgg.monthlyTotals,
-      perAlumno: lastAgg.perAlumno
-    };
-
-    const url = `${API_BASE}/api/export-excel`;
-    console.log('[export-excel] URL:', url, 'payload:', payload);
-
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify(payload),
-      mode: 'cors',
-      credentials: 'omit'
-    });
-
-    if(!resp.ok){
-      const text = await resp.text().catch(()=> '');
-      console.error('[export-excel] HTTP', resp.status, text);
-      alert(`Error exportando (${resp.status}). Mira Console > [export-excel] para detalles.`);
-      return;
-    }
-
-    const blob = await resp.blob();
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `Asistencia_${sid}_${gid}_${lastAgg.ym}.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(()=> URL.revokeObjectURL(a.href), 0);
-  }catch(err){
-    console.error('[export-excel] Failed:', err);
-    alert('No se pudo generar el Excel. Revisa la consola (buscar [export-excel]).');
   }
-}
-
 
   // Eventos
   btnRefrescar.addEventListener('click', refresh);

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Alta de Maestros</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif}
+    body{background:#f5f6fb;color:#2b2f36;line-height:1.55}
+    header{background:linear-gradient(135deg,#4A90E2,#2E5FAA);color:#fff;padding:16px 0;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+    .container{max-width:500px;margin:0 auto;padding:20px}
+    .card{background:#fff;border:1px solid #e8eaf1;border-radius:12px;box-shadow:0 4px 14px rgba(16,24,40,.06);padding:18px;margin-bottom:16px}
+    h2{font-size:22px;margin-bottom:6px}
+    .sub{color:#6b7280;font-size:14px;margin-bottom:14px}
+    label{display:block;font-weight:600;margin:10px 0 6px}
+    input{
+      width:100%;padding:10px 12px;border:1px solid #d9dde6;border-radius:10px;background:#fff;outline:none;transition:.2s
+    }
+    input:focus{box-shadow:0 0 0 3px rgba(74,144,226,.15);border-color:#9ec5ff}
+    .btn{
+      display:inline-flex;align-items:center;justify-content:center;
+      background:linear-gradient(135deg,#4A90E2,#3A80D2);color:#fff;border:0;border-radius:10px;
+      padding:12px 18px;font-weight:600;cursor:pointer;transition:.15s;margin-top:12px;width:100%
+    }
+    .btn:disabled{opacity:.6;cursor:not-allowed}
+    .muted{color:#6b7280;font-size:13px}
+    .ok{color:#05603a;background:#d1fadf;border:1px solid #a6f4c5;padding:10px;border-radius:10px;margin-top:10px;display:none}
+    .err{color:#b42318;background:#fee4e2;border:1px solid #fecdca;padding:10px;border-radius:10px;margin-top:10px;display:none}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Alta de Maestros</h1>
+  </header>
+
+  <div class="container">
+    <!-- Formulario -->
+    <div class="card">
+      <h2>Registrar maestro</h2>
+      <p class="sub">Completa los datos</p>
+
+      <label for="nombre">Nombre*</label>
+      <input id="nombre" autocomplete="off" required />
+
+      <label for="codigo">Código* (único)</label>
+      <input id="codigo" autocomplete="off" required placeholder="Ej. M1234" />
+
+      <button id="btnGuardar" class="btn">Guardar maestro</button>
+
+      <div id="msgOk" class="ok">✅ Maestro guardado correctamente.</div>
+      <div id="msgErr" class="err">❌ Ocurrió un error al guardar.</div>
+    </div>
+
+    <!-- Lista rápida (últimos 8) -->
+    <div class="card">
+      <h2>Últimos maestros</h2>
+      <div id="listaMaestros" class="muted">Sin datos…</div>
+    </div>
+  </div>
+
+  <!-- Firebase (SDK modular) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import {
+      getFirestore, collection, serverTimestamp,
+      query, orderBy, limit, getDocs,
+      doc, getDoc, setDoc
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBEIeZz3HeU-8EVirVx9JAYnGbBegh1Uh4",
+      authDomain: "maestros-7faa6.firebaseapp.com",
+      projectId: "maestros-7faa6",
+      storageBucket: "maestros-7faa6.firebasestorage.app",
+      messagingSenderId: "328284079222",
+      appId: "1:328284079222:web:f0ab5c3443469d145d4b57",
+      measurementId: "G-YKBQD9EJH3"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db  = getFirestore(app);
+
+    const btnGuardar = document.getElementById('btnGuardar');
+    const msgOk      = document.getElementById('msgOk');
+    const msgErr     = document.getElementById('msgErr');
+    const listaWrap  = document.getElementById('listaMaestros');
+
+    const nombre     = document.getElementById('nombre');
+    const codigo     = document.getElementById('codigo');
+
+    function limpiarMensajes(){
+      msgOk.style.display = 'none';
+      msgErr.style.display = 'none';
+    }
+
+    // Normaliza a MAYÚSCULAS sin espacios alrededor
+    function normCode(v){ return (v || '').trim().toUpperCase(); }
+
+    btnGuardar.addEventListener('click', onGuardar);
+    codigo.addEventListener('input', () => { codigo.value = normCode(codigo.value); });
+
+    async function onGuardar(e){
+      e.preventDefault();
+      limpiarMensajes();
+
+      const nombreVal = (nombre.value || '').trim();
+      const codigoVal = normCode(codigo.value);
+
+      if(!nombreVal || !codigoVal){
+        msgErr.textContent = 'Completa los campos obligatorios (*).';
+        msgErr.style.display = 'block';
+        return;
+      }
+
+      // (Opcional) Valida formato si quieres: solo letras/números/guiones
+      // if(!/^[A-Z0-9\-]+$/.test(codigoVal)){ ... }
+
+      btnGuardar.disabled = true;
+
+      try{
+        // 1) Evita colisión con códigos de ACCESO (escuelas)
+        const accSnap = await getDoc(doc(db, 'accesos', codigoVal));
+        if (accSnap.exists()){
+          throw new Error('Este código ya está asignado como código de ACCESO de una escuela. Usa otro.');
+        }
+
+        // 2) Asegura unicidad de código de maestro (ID del doc = código)
+        const maestroRef = doc(db, 'maestros', codigoVal);
+        const maestroSnap = await getDoc(maestroRef);
+        if (maestroSnap.exists()){
+          throw new Error('Este código ya está usado por otro maestro. Usa otro.');
+        }
+
+        // 3) Crea/guarda el maestro
+        await setDoc(maestroRef, {
+          nombre: nombreVal,
+          codigo: codigoVal,
+          createdAt: serverTimestamp()
+        });
+
+        msgOk.style.display = 'block';
+        nombre.value = '';
+        codigo.value = '';
+        await cargarUltimos();
+      }catch(err){
+        console.error(err);
+        msgErr.textContent = err?.message || 'No se pudo guardar.';
+        msgErr.style.display = 'block';
+      }finally{
+        btnGuardar.disabled = false;
+      }
+    }
+
+    async function cargarUltimos(){
+      try{
+        const qy = query(collection(db,'maestros'), orderBy('createdAt','desc'), limit(8));
+        const snaps = await getDocs(qy);
+        if(snaps.empty){
+          listaWrap.textContent = 'Sin datos…';
+          return;
+        }
+        const items = [];
+        snaps.forEach(d => {
+          const m = d.data() || {};
+          items.push(`
+            <div style="padding:8px;border:1px solid #eef0f6;border-radius:8px;margin-bottom:6px;background:#fafbff">
+              <b>${m.nombre || ''}</b> — <span class="muted">Código: ${m.codigo || d.id}</span>
+            </div>
+          `);
+        });
+        listaWrap.innerHTML = items.join('');
+      }catch(e){
+        console.error(e);
+        listaWrap.textContent = 'No se pudo cargar la lista.';
+      }
+    }
+
+    cargarUltimos();
+  </script>
+</body>
+</html>

@@ -34,8 +34,8 @@
   <div class="card">
     <div class="row">
       <div>Selecciona una opción</div>
-      <!-- Botón Regresar -->
-      <a id="btnHome" class="btn btn-home" href="escuela.html">← Regresar</a>
+      <!-- Regresar a la lista de grupos de esta escuela -->
+      <a id="btnHome" class="btn btn-home" href="#">← Regresar</a>
     </div>
 
     <div class="grid">
@@ -55,7 +55,7 @@
         <a id="linkAsis" href="#">Ir a Tomar Asistencia →</a>
       </div>
 
-      <!-- CALIFICACIONES (disabled por ahora) -->
+      <!-- CALIFICACIONES (placeholder) -->
       <div class="opt disabled">
         <div class="emoji">📝</div>
         <h3>Calificaciones</h3>
@@ -63,7 +63,7 @@
         <a href="#">Abrir</a>
       </div>
 
-      <!-- GRÁFICOS ASISTENCIA (nuevo) -->
+      <!-- GRÁFICOS -->
       <div class="opt" id="optGraf">
         <div class="emoji">📊</div>
         <h3>Gráficos Asistencia</h3>
@@ -75,9 +75,9 @@
 </div>
 
 <script>
-  // Pasar sid & gid en los links
+  // Solo usamos sid y gid. Nada de 'm'.
   const p = new URLSearchParams(location.search);
-  const sid = p.get('sid'); 
+  const sid = p.get('sid');
   const gid = p.get('gid');
 
   if(!sid || !gid){
@@ -85,8 +85,13 @@
     location.href = './escuelas.html';
   }
 
+  // Contexto visible
   document.getElementById('ctx').textContent = `Escuela: ${sid} · Grupo: ${gid}`;
 
+  // Volver a grupos de esta escuela
+  document.getElementById('btnHome').href = `./grupos.html?sid=${encodeURIComponent(sid)}`;
+
+  // Enlaces que propagan sid & gid (cada página resolverá 'm' internamente)
   document.getElementById('linkSubir').href = `./subirlista.html?sid=${encodeURIComponent(sid)}&gid=${encodeURIComponent(gid)}`;
   document.getElementById('linkAsis').href  = `./tomarlista.html?sid=${encodeURIComponent(sid)}&gid=${encodeURIComponent(gid)}`;
   document.getElementById('linkGraf').href  = `./graficos.html?sid=${encodeURIComponent(sid)}&gid=${encodeURIComponent(gid)}`;

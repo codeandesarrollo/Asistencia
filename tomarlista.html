@@ -26,6 +26,8 @@
   .msg{margin-top:12px;padding:10px;border-radius:8px;font-size:14px}
   .ok{background:#d4edda;color:#155724;border:1px solid #c3e6cb}
   .err{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb}
+  .login-form {max-width: 420px; margin: 40px auto; padding: 20px; background: white; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);}
+  .login-form input {width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 6px;}
 </style>
 </head>
 <body>
@@ -35,7 +37,16 @@
 </header>
 
 <div class="container">
-  <div class="card">
+  <!-- Acceso por código -->
+  <div id="codeAccess" class="card login-form" style="display:none;">
+    <h2>Acceso por código</h2>
+    <input id="accessCode" class="form-control" placeholder="Ingresa el código de acceso">
+    <button id="btnAccess" class="btn">Acceder</button>
+    <div id="codeMsg" class="msg" style="display:none; margin-top:12px"></div>
+  </div>
+
+  <!-- Interfaz principal -->
+  <div id="attendanceInterface" class="card" style="display:none;">
     <div class="row">
       <div>
         <label for="fechaAsis">Fecha:</label>
@@ -51,9 +62,7 @@
       </div>
     </div>
 
-    <div id="asisList">
-      <p>Cargando alumnos...</p>
-    </div>
+    <div id="asisList"><p>Ingresa un código de acceso para comenzar.</p></div>
 
     <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
       <button id="markAllA" class="btn">✓ Todos A (asistencia)</button>
@@ -68,10 +77,12 @@
 <!-- Firebase -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getFirestore, collection, getDocs, getDoc, setDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import {
+    getFirestore, collection, collectionGroup, getDocs, getDoc, setDoc, doc, serverTimestamp
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-  // Config Firebase
-  const firebaseConfig = {
+  // Firebase
+  const app = initializeApp({
     apiKey: "AIzaSyBEIeZz3HeU-8EVirVx9JAYnGbBegh1Uh4",
     authDomain: "maestros-7faa6.firebaseapp.com",
     projectId: "maestros-7faa6",
@@ -79,58 +90,175 @@
     messagingSenderId: "328284079222",
     appId: "1:328284079222:web:f0ab5c3443469d145d4b57",
     measurementId: "G-YKBQD9EJH3"
-  };
-  const app = initializeApp(firebaseConfig);
+  });
   const db  = getFirestore(app);
 
-  // Contexto
-  const p = new URLSearchParams(location.search);
-  const sid = p.get('sid');
-  const gid = p.get('gid');
-  if(!sid || !gid){ alert('Falta sid o gid'); location.href='./index.html'; }
-
-  document.getElementById('ctx').textContent = `Escuela: ${sid} · Grupo: ${gid}`;
-  document.getElementById('btnBack').href = `opcionesgrupo.html?sid=${encodeURIComponent(sid)}&gid=${encodeURIComponent(gid)}`;
-
+  // UI
+  const codeAccessDiv = document.getElementById('codeAccess');
+  const attendanceInterface = document.getElementById('attendanceInterface');
+  const accessCodeInput = document.getElementById('accessCode');
+  const btnAccess = document.getElementById('btnAccess');
+  const codeMsg = document.getElementById('codeMsg');
   const fechaAsis = document.getElementById('fechaAsis');
   const asisList = document.getElementById('asisList');
   const msg = document.getElementById('msg');
-  const markAllA = document.getElementById('markAllA'); // Asistencia
-  const markAllF = document.getElementById('markAllF'); // Falta
+  const markAllA = document.getElementById('markAllA');
+  const markAllF = document.getElementById('markAllF');
   const saveAsis = document.getElementById('saveAsis');
+  const btnBack = document.getElementById('btnBack');
+  const ctx = document.getElementById('ctx');
 
+  // Estado
+  let alumnos = [];
+  let asistencia = {};
+  let currentSid = null;
+  let currentGid = null;
+  let allowedGroups = [];
+  let m = null; // maestro resuelto
+
+  // Helpers
+  const p = new URLSearchParams(location.search);
+  const sidParam = p.get('sid');
+  const gidParam = p.get('gid');
   function todayStr(){ return new Date().toISOString().slice(0,10); }
   fechaAsis.value = todayStr();
 
-  let alumnos = []; // [{id,name}]
-  let asistencia = {}; // { id: 'A'|'F'|'R' }  // A=Asistencia, F=Falta, R=Retardo
+  function showMsg(el, text, kind='ok'){
+    el.style.display='block';
+    el.className = `msg ${kind==='ok'?'ok':'err'}`;
+    el.textContent = text;
+    setTimeout(()=>el.style.display='none', 3200);
+  }
 
-  function showMsg(text,kind='ok'){
-    msg.style.display='block';
-    msg.className = `msg ${kind==='ok'?'ok':'err'}`;
-    msg.textContent = text;
-    setTimeout(()=>msg.style.display='none',3200);
+  // === Resolver m (maestro) a partir de sid ===
+  async function resolveMaestroBySchoolId(sid){
+    // Cargamos todas las escuelas y filtramos por ID (rápido para volumen pequeño)
+    const cg = await getDocs(collectionGroup(db, 'escuelas'));
+    const found = cg.docs.find(d => d.id === sid);
+    if (!found) return null;
+    return found.ref.parent.parent?.id || null; // maestros/{m}
+  }
+
+  // ==== Flujo de inicio ====
+  if (sidParam && gidParam){
+    // Modo admin: con sid & gid
+    currentSid = sidParam;
+    currentGid = gidParam;
+    ctx.textContent = `Escuela: ${currentSid} · Grupo: ${currentGid}`;
+    btnBack.href = `opcionesgrupo.html?sid=${encodeURIComponent(currentSid)}&gid=${encodeURIComponent(currentGid)}`;
+    // Resolver m antes de cargar datos
+    m = await resolveMaestroBySchoolId(currentSid);
+    if(!m){ showMsg(msg, 'No se encontró la escuela bajo ningún maestro.', 'err'); }
+    else { codeAccessDiv.style.display='none'; attendanceInterface.style.display='block'; await initializeAttendance(); }
+  } else {
+    // Acceso por código
+    codeAccessDiv.style.display='block';
+    attendanceInterface.style.display='none';
+    ctx.textContent = 'Acceso por código';
+    btnBack.href = './index.html';
+  }
+
+  // === Acceso por código ===
+  btnAccess.addEventListener('click', async () => {
+    const code = accessCodeInput.value.trim();
+    if(!code){ showMsg(codeMsg, 'Ingresa un código de acceso', 'err'); return; }
+
+    try {
+      const codeRef = doc(db, 'accesos', code);
+      const codeSnap = await getDoc(codeRef);
+      if(!codeSnap.exists()){ showMsg(codeMsg, 'Código inválido', 'err'); return; }
+
+      const codeData = codeSnap.data();
+      if(!codeData.activo){ showMsg(codeMsg, 'Este código ya no está activo', 'err'); return; }
+
+      currentSid = codeData.escuelaId;
+      allowedGroups = Array.isArray(codeData.grupos) ? codeData.grupos : [];
+
+      if(!currentSid || !allowedGroups.length){ showMsg(codeMsg, 'El código no tiene escuela/grupos asignados', 'err'); return; }
+
+      // Resolver maestro y continuar
+      m = await resolveMaestroBySchoolId(currentSid);
+      if(!m){ showMsg(codeMsg, 'No se encontró la escuela bajo ningún maestro.', 'err'); return; }
+
+      if (allowedGroups.length === 1){
+        currentGid = allowedGroups[0];
+        await loadGroupInfo(currentSid, currentGid);
+      } else {
+        await showGroupSelector(currentSid, allowedGroups);
+      }
+
+      codeAccessDiv.style.display = 'none';
+      attendanceInterface.style.display = 'block';
+    } catch (e){
+      console.error('Error verificando código:', e);
+      showMsg(codeMsg, 'Error al verificar el código', 'err');
+    }
+  });
+
+  // Selector de grupo (si hay varios)
+  async function showGroupSelector(schoolId, groupIds){
+    // Obtener nombres desde ruta ANIDADA
+    const groupsInfo = [];
+    for (const gid of groupIds){
+      const gref = doc(db, 'maestros', m, 'escuelas', schoolId, 'grupos', gid);
+      const gsnap = await getDoc(gref);
+      groupsInfo.push({ id: gid, name: gsnap.exists() ? (gsnap.data().name || gid) : gid });
+    }
+    asisList.innerHTML = `
+      <h3>Selecciona un grupo:</h3>
+      <div style="display:flex; flex-direction:column; gap:10px; margin-top:15px;">
+        ${groupsInfo.map(g=>`
+          <button class="btn" data-g="${g.id}">${g.name}</button>
+        `).join('')}
+      </div>
+    `;
+    asisList.querySelectorAll('button[data-g]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        currentGid = btn.getAttribute('data-g');
+        await loadGroupInfo(currentSid, currentGid);
+      });
+    });
+    ctx.textContent = `Escuela: ${schoolId} · Selecciona grupo`;
+  }
+
+  // Cargar nombre y preparar interfaz para un grupo
+  async function loadGroupInfo(schoolId, groupId){
+    try{
+      const gref = doc(db, 'maestros', m, 'escuelas', schoolId, 'grupos', groupId);
+      const gsnap = await getDoc(gref);
+      const gname = gsnap.exists() ? (gsnap.data().name || groupId) : groupId;
+      ctx.textContent = `Escuela: ${schoolId} · Grupo: ${gname}`;
+      await initializeAttendance();
+    }catch(e){
+      console.error('Error cargando información del grupo:', e);
+      showMsg(msg, 'Error al cargar información del grupo', 'err');
+    }
+  }
+
+  async function initializeAttendance(){
+    await loadAlumnos();
+    await loadAsistenciaForDate(fechaAsis.value || todayStr());
   }
 
   async function loadAlumnos(){
     alumnos = [];
-    const snap = await getDocs(collection(db,'escuelas',sid,'grupos',gid,'alumnos'));
-    snap.forEach(d=>{
-      const it={id:d.id,...d.data()};
-      alumnos.push({id:it.id,name:it.name||''});
-    });
+    try{
+      const snap = await getDocs(collection(db, 'maestros', m, 'escuelas', currentSid, 'grupos', currentGid, 'alumnos'));
+      snap.forEach(d=> alumnos.push({ id: d.id, name: d.data().name || '' }));
+      renderAsis();
+    }catch(e){
+      console.error('Error cargando alumnos:', e);
+      showMsg(msg, 'Error al cargar los alumnos', 'err');
+    }
   }
 
   function renderAsis(){
-    if(!alumnos.length){
-      asisList.innerHTML = "<p>No hay alumnos en este grupo.</p>";
-      return;
-    }
+    if(!alumnos.length){ asisList.innerHTML = '<p>No hay alumnos en este grupo.</p>'; return; }
     asisList.innerHTML = '';
     alumnos.forEach(a=>{
-      const row=document.createElement('div');
-      row.className='attendance-row';
-      row.innerHTML=`
+      const row = document.createElement('div');
+      row.className = 'attendance-row';
+      row.innerHTML = `
         <div>${a.name}</div>
         <div class="radio-group">
           <input type="radio" name="r-${a.id}" id="rA-${a.id}" ${asistencia[a.id]==='A'?'checked':''}>
@@ -149,74 +277,57 @@
   }
 
   async function loadAsistenciaForDate(dateId){
-    // Por defecto todos en 'A'
+    // Default A
     asistencia = {};
     alumnos.forEach(a=> asistencia[a.id] = 'A');
-
     try{
-      const ref = doc(db,'escuelas',sid,'grupos',gid,'asistencias',dateId);
+      const ref = doc(db, 'maestros', m, 'escuelas', currentSid, 'grupos', currentGid, 'asistencias', dateId);
       const snap = await getDoc(ref);
       if(snap.exists()){
-        const data = snap.data();
-        const registros = data?.registros || {};
-        // Sobrescribe con lo guardado
-        for(const [alumnoId, estado] of Object.entries(registros)){
-          if(asistencia.hasOwnProperty(alumnoId)){
-            const v = String(estado || 'A').toUpperCase();
-            asistencia[alumnoId] = (v==='A'||v==='F'||v==='R') ? v : 'A';
+        const regs = snap.data()?.registros || {};
+        Object.entries(regs).forEach(([aid, st])=>{
+          if(aid in asistencia){
+            const v = String(st||'A').toUpperCase();
+            asistencia[aid] = (v==='A'||v==='R'||v==='F') ? v : 'A';
           }
-        }
+        });
         renderAsis();
-        showMsg(`Asistencia del ${dateId} cargada.`, 'ok');
+        showMsg(msg, `Asistencia del ${dateId} cargada.`, 'ok');
       }else{
         renderAsis();
-        showMsg(`Sin registro previo para ${dateId}.`, 'ok');
+        showMsg(msg, `Sin registro previo para ${dateId}.`, 'ok');
       }
-    }catch(err){
-      console.error(err);
+    }catch(e){
+      console.error(e);
       renderAsis();
-      showMsg('No se pudo cargar la asistencia guardada.', 'err');
+      showMsg(msg, 'No se pudo cargar la asistencia guardada.', 'err');
     }
   }
 
-  markAllA.addEventListener('click',()=>{
-    alumnos.forEach(a=>asistencia[a.id]='A');
-    renderAsis();
-  });
-  markAllF.addEventListener('click',()=>{
-    alumnos.forEach(a=>asistencia[a.id]='F');
-    renderAsis();
-  });
+  markAllA.addEventListener('click', ()=>{ alumnos.forEach(a=>asistencia[a.id]='A'); renderAsis(); });
+  markAllF.addEventListener('click', ()=>{ alumnos.forEach(a=>asistencia[a.id]='F'); renderAsis(); });
 
-  // Cambiar de día: cargar si hay datos guardados para esa fecha
-  fechaAsis.addEventListener('change',()=>{
-    const dateId = fechaAsis.value || todayStr();
-    loadAsistenciaForDate(dateId);
-  });
+  fechaAsis.addEventListener('change', ()=> loadAsistenciaForDate(fechaAsis.value || todayStr()));
 
-  saveAsis.addEventListener('click',async()=>{
-    if(!alumnos.length){ showMsg('No hay alumnos para guardar.','err'); return; }
+  saveAsis.addEventListener('click', async ()=>{
+    if(!alumnos.length){ showMsg(msg, 'No hay alumnos para guardar.','err'); return; }
     const dateId = fechaAsis.value || todayStr();
-    const registros={};
-    alumnos.forEach(a=> registros[a.id]=asistencia[a.id]||'A' );
+    const registros = {};
+    alumnos.forEach(a=> registros[a.id] = asistencia[a.id] || 'A');
     try{
       await setDoc(
-        doc(db,'escuelas',sid,'grupos',gid,'asistencias',dateId),
-        { date:dateId, registros, updatedAt:serverTimestamp() },
-        { merge:true } // permite actualizar sin borrar metadatos previos
+        doc(db, 'maestros', m, 'escuelas', currentSid, 'grupos', currentGid, 'asistencias', dateId),
+        { date: dateId, registros, updatedAt: serverTimestamp() },
+        { merge: true }
       );
-      showMsg('Asistencia del día guardada correctamente ✔');
+      showMsg(msg, 'Asistencia del día guardada correctamente ✔');
     }catch(e){
       console.error(e);
-      showMsg('Error al guardar asistencia','err');
+      showMsg(msg, 'Error al guardar asistencia','err');
     }
   });
 
-  // Init: cargar alumnos y después asistencia del día seleccionado
-  (async ()=>{
-    await loadAlumnos();
-    await loadAsistenciaForDate(fechaAsis.value || todayStr());
-  })();
+  accessCodeInput.addEventListener('keyup', e=>{ if(e.key==='Enter') btnAccess.click(); });
 </script>
 </body>
 </html>

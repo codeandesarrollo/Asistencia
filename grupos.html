@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Escuela · Grupos</title>
+  <style>
+    *{ box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; }
+    body{ background:#f5f5f5; color:#333; line-height:1.6; }
+    header{ background:linear-gradient(135deg,#4A90E2,#2E5FAA); color:#fff; padding:15px 0; text-align:center; box-shadow:0 2px 5px rgba(0,0,0,0.1); position:sticky; top:0; }
+    .container{ max-width:720px; margin:0 auto; padding:20px; }
+    .btn{ display:inline-block; background:linear-gradient(135deg,#4A90E2,#3A80D2); color:#fff; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-size:15px; text-decoration:none; transition:.2s; }
+    .btn:hover{ filter:brightness(1.05); }
+    .card{ background:#fff; border-radius:12px; padding:16px; margin-bottom:16px; box-shadow:0 3px 10px rgba(0,0,0,.08); }
+    .form-control{ width:100%; padding:12px; border:1px solid #ddd; border-radius:8px; font-size:16px; margin-bottom:10px; }
+    .group{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:14px; border:1px solid #eee; border-radius:10px; background:linear-gradient(135deg,#f8f9fa,#eef2f6); margin-bottom:10px; }
+    .group h3{ font-size:18px; margin:0; }
+    .actions{ display:flex; gap:8px; flex-wrap:wrap; }
+    .empty{ text-align:center; color:#6c757d; padding:24px 8px; }
+    .subheader{ display:flex; justify-content:space-between; align-items:center; margin:12px 0 16px; }
+    .badge{ color:#e9eefc; font-size:12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 id="schoolTitle">Escuela</h1>
+    <div class="badge" id="ctxBadge"></div>
+  </header>
+
+  <div class="container">
+    <div class="subheader">
+      <a id="backBtn" class="btn" href="./escuelas.html">← Escuelas</a>
+      <span id="schoolId" style="color:#6c757d;font-size:12px;"></span>
+    </div>
+
+    <div class="card">
+      <h2>Agregar grupo</h2>
+      <input id="groupName" class="form-control" placeholder="Nombre del grupo (ej. 1A, 2B)">
+      <button id="addBtn" class="btn">Agregar</button>
+    </div>
+
+    <div class="card">
+      <h2>Grupos</h2>
+      <div id="list"></div>
+      <div id="empty" class="empty" style="display:none;">No hay grupos en esta escuela.</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import {
+      getFirestore, collection, addDoc, doc, getDoc, getDocs,
+      serverTimestamp, onSnapshot, query, orderBy, collectionGroup
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+    // Firebase
+    const app = initializeApp({
+      apiKey: "AIzaSyBEIeZz3HeU-8EVirVx9JAYnGbBegh1Uh4",
+      authDomain: "maestros-7faa6.firebaseapp.com",
+      projectId: "maestros-7faa6",
+      storageBucket: "maestros-7faa6.firebasestorage.app",
+      messagingSenderId: "328284079222",
+      appId: "1:328284079222:web:f0ab5c3443469d145d4b57",
+      measurementId: "G-YKBQD9EJH3"
+    });
+    const db  = getFirestore(app);
+
+    // UI
+    const $ = (s)=>document.querySelector(s);
+    const listEl  = $('#list');
+    const emptyEl = $('#empty');
+    const titleEl = $('#schoolTitle');
+    const idEl    = $('#schoolId');
+    const addBtn  = $('#addBtn');
+    const nameInp = $('#groupName');
+    const backBtn = $('#backBtn');
+    const ctxBadge= $('#ctxBadge');
+
+    // Parámetros (solo sid)
+    const params = new URLSearchParams(location.search);
+    const sid = params.get('sid');
+    if(!sid){
+      alert('Falta el parámetro sid.');
+      throw new Error('sid requerido');
+    }
+
+    // ---- Resolver maestro m a partir de sid (sin session y sin m en URL)
+    async function resolveMaestroBySchoolId(sid){
+      // Cargamos todas las escuelas (collectionGroup) y filtramos por ID
+      const cg = await getDocs(collectionGroup(db, 'escuelas'));
+      const found = cg.docs.find(d => d.id === sid);
+      if (!found) return null;
+      return found.ref.parent.parent?.id || null; // maestros/{m}
+    }
+
+    let m = null; // maestro resuelto
+
+    // Cargar nombre de escuela (anidado)
+    async function loadSchoolName(){
+      try{
+        const snap = await getDoc(doc(db,'maestros', m, 'escuelas', sid));
+        if(snap.exists()){
+          titleEl.textContent = snap.data().name || 'Escuela';
+        } else {
+          titleEl.textContent = 'Escuela';
+        }
+      }catch(e){ console.error(e); }
+    }
+
+    // Render lista
+    function renderGroups(items){
+      listEl.innerHTML = '';
+      if(!items.length){ emptyEl.style.display = 'block'; return; }
+      emptyEl.style.display = 'none';
+
+      items.forEach(g=>{
+        const row = document.createElement('div');
+        row.className = 'group';
+        const gname = g.name || g.nombre || g.id || '(Sin nombre)';
+        row.innerHTML = `
+          <div><h3>${gname}</h3></div>
+          <div class="actions">
+            <a class="btn"
+               href="./opcionesgrupo.html?sid=${encodeURIComponent(sid)}&gid=${encodeURIComponent(g.id)}">
+               Administrar
+            </a>
+          </div>
+        `;
+        listEl.appendChild(row);
+      });
+    }
+
+    // Suscripción (anidado)
+    function subscribeGroups(){
+      const col = collection(db, 'maestros', m, 'escuelas', sid, 'grupos');
+      const qy  = query(col, orderBy('createdAt','desc'));
+      onSnapshot(qy, snap=>{
+        const items = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+        renderGroups(items);
+      }, err=>{
+        console.error(err);
+        alert('No se pudieron cargar los grupos (revisa reglas/permisos).');
+      });
+    }
+
+    // Alta (anidado)
+    async function addGroup(){
+      const name = nameInp.value.trim();
+      if(!name){ alert('Escribe el nombre del grupo.'); return; }
+      try{
+        await addDoc(collection(db, 'maestros', m, 'escuelas', sid, 'grupos'), {
+          name,
+          createdAt: serverTimestamp()
+        });
+        nameInp.value = '';
+      }catch(e){
+        console.error('[addGroup] failed:', e);
+        alert(`Error al guardar el grupo: ${e.code || e.message}`);
+      }
+    }
+
+    addBtn.addEventListener('click', addGroup);
+    nameInp.addEventListener('keyup', e=>{ if(e.key === 'Enter') addGroup(); });
+
+    // INIT
+    (async function init(){
+      m = await resolveMaestroBySchoolId(sid);
+      if(!m){
+        alert('No se encontró la escuela bajo ningún maestro.');
+        return;
+      }
+      backBtn.href = './escuelas.html'; // ya no pedimos m
+      idEl.textContent   = `Maestro: ${m} · Escuela: ${sid}`;
+      ctxBadge.textContent = `Ruta: maestros/${m}/escuelas/${sid}`;
+      await loadSchoolName();
+      subscribeGroups();
+    })();
+  </script>
+</body>
+</html>
