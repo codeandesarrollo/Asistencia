@@ -5,23 +5,54 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Escuela · Grupos</title>
   <style>
+    :root{
+      --primary:#4A90E2; --primary-2:#2E5FAA;
+      --text:#333; --muted:#6b7280; --card:#fff; --bg:#f5f5f5;
+    }
     *{ box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; }
-    body{ background:#f5f5f5; color:#333; line-height:1.6; }
-    header{ background:linear-gradient(135deg,#4A90E2,#2E5FAA); color:#fff; padding:15px 0; text-align:center; box-shadow:0 2px 5px rgba(0,0,0,0.1); position:sticky; top:0; }
+    body{ background:var(--bg); color:var(--text); line-height:1.6; }
+    header{ background:linear-gradient(135deg,var(--primary),var(--primary-2)); color:#fff; padding:15px 0; text-align:center; box-shadow:0 2px 5px rgba(0,0,0,0.1); position:sticky; top:0; }
     .container{ max-width:720px; margin:0 auto; padding:20px; }
-    .btn{ display:inline-block; background:linear-gradient(135deg,#4A90E2,#3A80D2); color:#fff; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-size:15px; text-decoration:none; transition:.2s; }
+
+    .btn{
+      display:inline-flex; align-items:center; justify-content:center;
+      background:linear-gradient(135deg,var(--primary),#3A80D2); color:#fff;
+      border:none; padding:0 16px; height:44px; border-radius:10px; cursor:pointer; font-size:15px; text-decoration:none; transition:.2s;
+      box-shadow:0 6px 14px rgba(74,144,226,.20); font-weight:600;
+    }
     .btn:hover{ filter:brightness(1.05); }
-    .btn[aria-disabled="true"]{ opacity:.6; pointer-events:none; }
-    .btn-secondary{ background:linear-gradient(135deg,#6c757d,#5a6268); }
-    .card{ background:#fff; border-radius:12px; padding:16px; margin-bottom:16px; box-shadow:0 3px 10px rgba(0,0,0,.08); }
-    .form-control{ width:100%; padding:12px; border:1px solid #ddd; border-radius:8px; font-size:16px; margin-bottom:10px; }
-    .group{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:14px; border:1px solid #eee; border-radius:10px; background:linear-gradient(135deg,#f8f9fa,#eef2f6); margin-bottom:10px; }
-    .group h3{ font-size:18px; margin:0; }
-    .actions{ display:flex; gap:8px; flex-wrap:wrap; }
-    .empty{ text-align:center; color:#6c757d; padding:24px 8px; }
+    .btn:disabled, .btn[aria-disabled="true"]{ opacity:.65; cursor:not-allowed; box-shadow:none; }
+    .btn-secondary{ background:linear-gradient(135deg,#6c757d,#5a6268); box-shadow:0 6px 14px rgba(108,117,125,.22); }
+
+    .card{ background:#fff; border-radius:14px; padding:18px; margin-bottom:16px; box-shadow:0 6px 18px rgba(0,0,0,.06); border:1px solid #e9eef6; }
+
+    /* INPUT + BOTÓN alineados */
+    label{ font-size:14px; color:#111827; font-weight:600; display:block; margin-bottom:8px; }
+    .form-grid{ display:grid; grid-template-columns:1fr auto; gap:12px; align-items:end; }
+    @media (max-width:560px){ .form-grid{ grid-template-columns:1fr; } }
+
+    .form-control{
+      width:100%; padding:12px 14px; border:1px solid #d1d5db; border-radius:10px; font-size:15px; background:#fafafa; height:44px;
+      transition:border-color .2s, box-shadow .2s, background .2s;
+    }
+    .form-control:focus{ outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(74,144,226,.25); background:#fff; }
+
     .subheader{ display:flex; justify-content:space-between; align-items:center; margin:12px 0 16px; gap:10px; }
     .right-tools{ display:flex; gap:8px; align-items:center; }
     .badge{ color:#e9eefc; font-size:12px; }
+
+    .group{
+      display:flex; justify-content:space-between; align-items:center; gap:12px;
+      padding:14px; border:1px solid #eef0f4; border-radius:12px; background:linear-gradient(135deg,#f8f9fa,#eef2f6); margin-bottom:10px;
+    }
+    .group h3{ font-size:18px; margin:0; }
+    .actions{ display:flex; gap:8px; flex-wrap:wrap; }
+    .empty{ text-align:center; color:#6c757d; padding:24px 8px; }
+
+    @media (max-width:560px){
+      .group{ flex-direction:column; align-items:stretch; }
+      .actions{ justify-content:flex-end; }
+    }
   </style>
 </head>
 <body>
@@ -34,21 +65,23 @@
     <div class="subheader">
       <a id="backBtn" class="btn" href="./escuelas.html">← Escuelas</a>
       <div class="right-tools">
-        <span id="schoolId" style="color:#6c757d;font-size:12px;"></span>
-        <!-- Botón Salir (solo en modo código) -->
+        <span id="schoolId" style="color:#e9eefc;font-size:12px;"></span>
         <button id="btnSalir" class="btn btn-secondary" style="display:none;">Salir</button>
       </div>
     </div>
 
-    <!-- Card de alta (se oculta en modo code) -->
+    <!-- Card de alta (oculta en modo código) -->
     <div id="addCard" class="card">
-      <h2>Agregar grupo</h2>
-      <input id="groupName" class="form-control" placeholder="Nombre del grupo (ej. 1A, 2B)">
-      <button id="addBtn" class="btn">Agregar</button>
+      <h2 style="margin-bottom:10px;">Agregar grupo</h2>
+      <label for="groupName">Nombre del grupo</label>
+      <div class="form-grid">
+        <input id="groupName" class="form-control" placeholder="Ej. 1A, 2B" autocomplete="off">
+        <button id="addBtn" class="btn">Agregar</button>
+      </div>
     </div>
 
     <div class="card">
-      <h2>Grupos</h2>
+      <h2 style="margin-bottom:8px;">Grupos</h2>
       <div id="list"></div>
       <div id="empty" class="empty" style="display:none;">No hay grupos en esta escuela.</div>
     </div>
@@ -111,17 +144,13 @@
     }
 
     let m = null;
-    let schoolName = ''; // ← guardaremos el nombre de la escuela
+    let schoolName = '';
 
     async function loadSchoolName(){
       try{
         const snap = await getDoc(doc(db,'maestros', m, 'escuelas', sid));
-        if(snap.exists()){
-          schoolName = snap.data().name || 'Escuela';
-        } else {
-          schoolName = 'Escuela';
-        }
-        titleEl.textContent = schoolName; // título grande
+        schoolName = snap.exists() ? (snap.data().name || 'Escuela') : 'Escuela';
+        titleEl.textContent = schoolName;
       }catch(e){ console.error(e); }
     }
 
@@ -155,9 +184,7 @@
       onSnapshot(qy, snap=>{
         const items = snap.docs.map(d=>({ id:d.id, ...d.data() }));
         renderGroups(items);
-      }, err=>{
-        console.error(err);
-      });
+      }, err=>{ console.error(err); });
     }
 
     async function renderGroupsByCode(allowedIds){
@@ -176,21 +203,30 @@
 
     async function addGroup(){
       const name = nameInp.value.trim();
-      if(!name){ alert('Escribe el nombre del grupo.'); return; }
+      if(!name){ alert('Escribe el nombre del grupo.'); nameInp.focus(); return; }
+
+      const prev = addBtn.textContent;
+      addBtn.disabled = true;
+      addBtn.textContent = 'Agregando…';
+
       try{
         await addDoc(collection(db, 'maestros', m, 'escuelas', sid, 'grupos'), {
           name,
           createdAt: serverTimestamp()
         });
         nameInp.value = '';
+        nameInp.focus();
       }catch(e){
         console.error('[addGroup] failed:', e);
         alert(`Error al guardar el grupo: ${e.code || e.message}`);
+      }finally{
+        addBtn.disabled = false;
+        addBtn.textContent = prev;
       }
     }
 
     addBtn?.addEventListener('click', addGroup);
-    nameInp?.addEventListener('keyup', e=>{ if(e.key === 'Enter') addGroup(); });
+    nameInp?.addEventListener('keydown', e=>{ if(e.key === 'Enter') addGroup(); });
 
     // Acción de "Salir" (solo visible en modo código)
     btnSalir?.addEventListener('click', ()=>{
@@ -214,8 +250,7 @@
         addCard.style.display = 'none';
         backBtn.removeAttribute('href');
         backBtn.setAttribute('aria-disabled','true');
-        btnSalir.style.display = 'inline-block';
-        // Mostrar solo el nombre
+        btnSalir.style.display = 'inline-flex';
         idEl.textContent = `Acceso por código · ${schoolName}`;
 
         const snap = await getDoc(doc(db,'accesos', code));
@@ -232,13 +267,14 @@
         }
 
         await renderGroupsByCode(acc.grupos);
-
       } else {
         // --- MODO ADMIN ---
         backBtn.href = './escuelas.html';
-        // Mostrar solo el nombre
+        btnSalir.style.display = 'none';
         idEl.textContent = `Maestro: ${m} · ${schoolName}`;
         subscribeGroupsAdmin();
+        // Autofocus al input cuando es admin
+        nameInp?.focus();
       }
     })();
   </script>
