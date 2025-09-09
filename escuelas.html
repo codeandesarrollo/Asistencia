@@ -5,26 +5,54 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Escuelas</title>
   <style>
+    :root{
+      --primary:#4A90E2; --primary-2:#2E5FAA;
+      --text:#333; --muted:#6b7280; --card:#fff; --bg:#f5f5f5;
+    }
     *{ box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; }
-    body{ background:#f5f5f5; color:#333; line-height:1.6; }
-    header{ background:linear-gradient(135deg,#4A90E2,#2E5FAA); color:#fff; padding:15px 0; text-align:center; box-shadow:0 2px 5px rgba(0,0,0,0.1); position:sticky; top:0; }
+    body{ background:var(--bg); color:var(--text); line-height:1.6; }
+    header{ background:linear-gradient(135deg,var(--primary),var(--primary-2)); color:#fff; padding:15px 0; text-align:center; box-shadow:0 2px 5px rgba(0,0,0,0.1); position:sticky; top:0; }
     .container{ max-width:720px; margin:0 auto; padding:20px; }
-    .btn{ display:inline-block; background:linear-gradient(135deg,#4A90E2,#3A80D2); color:#fff; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-size:15px; text-decoration:none; transition:.2s; }
+
+    .btn{
+      display:inline-flex; align-items:center; justify-content:center;
+      background:linear-gradient(135deg,var(--primary),#3A80D2); color:#fff;
+      border:none; padding:0 16px; height:44px; border-radius:10px; cursor:pointer; font-size:15px; text-decoration:none; transition:.2s;
+      box-shadow:0 6px 14px rgba(74,144,226,.20); font-weight:600;
+    }
     .btn:hover{ filter:brightness(1.05); }
-    .btn-outline{ background:#fff; color:#2E5FAA; border:1px solid #2E5FAA; }
-    .btn[disabled]{ opacity:.6; cursor:not-allowed; }
-    .card{ background:#fff; border-radius:12px; padding:16px; margin-bottom:16px; box-shadow:0 3px 10px rgba(0,0,0,.08); }
-    .form-control{ width:100%; padding:12px; border:1px solid #ddd; border-radius:8px; font-size:16px; margin-bottom:10px; }
-    .school{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:14px; border:1px solid #eee; border-radius:10px; background:linear-gradient(135deg,#f8f9fa,#eef2f6); margin-bottom:10px; }
+    .btn[disabled]{ opacity:.65; cursor:not-allowed; box-shadow:none; }
+    .btn-outline{ background:#fff; color:#2E5FAA; border:1px solid #2E5FAA; box-shadow:none; }
+
+    .card{ background:#fff; border-radius:14px; padding:18px; margin-bottom:16px; box-shadow:0 6px 18px rgba(0,0,0,.06); border:1px solid #e9eef6; }
+
+    /* INPUT + BOTÓN alineados (igual que en index) */
+    label{ font-size:14px; color:#111827; font-weight:600; display:block; margin-bottom:8px; }
+    .form-grid{ display:grid; grid-template-columns:1fr auto; gap:12px; align-items:end; }
+    @media (max-width:560px){ .form-grid{ grid-template-columns:1fr; } }
+
+    .form-control{
+      width:100%; padding:12px 14px; border:1px solid #d1d5db; border-radius:10px; font-size:15px; background:#fafafa; height:44px;
+      transition:border-color .2s, box-shadow .2s, background .2s;
+    }
+    .form-control:focus{ outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(74,144,226,.25); background:#fff; }
+
+    .school{
+      display:flex; justify-content:space-between; align-items:center; gap:12px;
+      padding:14px; border:1px solid #eef0f4; border-radius:12px; background:linear-gradient(135deg,#f8f9fa,#eef2f6); margin-bottom:10px;
+    }
     .school h3{ font-size:18px; margin:0; }
     .meta{ color:#666; font-size:13px; margin-top:4px; }
     .actions{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
 
     /* Chips de códigos */
     .codes-wrap{ display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
-    .code-pill{ background:#eef2ff; color:#2E5FAA; padding:6px 10px; border-radius:999px; font-weight:600; font-size:12px; display:inline-flex; gap:8px; align-items:center; }
-    .pill-text{ font-weight:600; }
-    .pill-sub{ font-weight:500; color:#3a5ab0; }
+    .code-pill{
+      background:#eef2ff; color:#2E5FAA; padding:6px 10px; border-radius:999px; font-weight:600; font-size:12px;
+      display:inline-flex; gap:8px; align-items:center; border:1px solid #dbe3ff;
+    }
+    .pill-text{ font-weight:700; }
+    .pill-sub{ font-weight:600; color:#3a5ab0; }
     .pill-del{ background:#fff; color:#d11; border:1px solid #f1c; border-radius:999px; font-size:12px; padding:3px 8px; cursor:pointer; }
     .pill-del:hover{ filter:brightness(0.95); }
 
@@ -37,6 +65,12 @@
     .group-checkbox input { margin-right: 10px; }
     .modal-actions { margin-top: 16px; display: flex; justify-content: flex-end; gap: 10px; }
     .hint { color:#6b7280; font-size:12px; margin-top:6px; }
+
+    /* Responsive escuela fila */
+    @media (max-width:560px){
+      .school{ flex-direction:column; align-items:stretch; }
+      .actions{ justify-content:flex-end; }
+    }
   </style>
 </head>
 <body>
@@ -45,17 +79,23 @@
   </header>
 
   <div class="container">
-    <a class="btn" href="./index.html">← Inicio</a>
+    <a class="btn" href="./index.html" style="margin-bottom:12px;">← Inicio</a>
 
     <div class="card">
-      <h2>Agregar escuela</h2>
-      <input id="schoolName" class="form-control" placeholder="Nombre de la escuela">
-      <button id="addBtn" class="btn">Agregar</button>
-      <div id="sessionInfo" class="meta" style="margin-top:8px;"></div>
+      <h2 style="margin-bottom:10px;">Agregar escuela</h2>
+
+      <!-- Grid: input + botón alineados -->
+      <label for="schoolName">Nombre de la escuela</label>
+      <div class="form-grid" style="margin-bottom:6px;">
+        <input id="schoolName" class="form-control" placeholder="Ej. Secundaria 32 · Turno Matutino" autocomplete="organization"/>
+        <button id="addBtn" class="btn">Agregar</button>
+      </div>
+
+      <div id="sessionInfo" class="meta" style="margin-top:6px;"></div>
     </div>
 
     <div class="card">
-      <h2>Tus escuelas</h2>
+      <h2 style="margin-bottom:8px;">Tus escuelas</h2>
       <div id="list"></div>
       <div id="empty" class="meta" style="display:none; text-align:center;">No hay escuelas registradas.</div>
     </div>
@@ -251,15 +291,17 @@
       const qy   = query(col, orderBy('createdAt','desc'));
       unsubscribeSchools = onSnapshot(qy, async snap => {
         const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        // render asíncrono para poder resolver nombres
         await renderSchools(items);
       });
     }
 
-    // Agregar escuela bajo el maestro
+    // Agregar escuela bajo el maestro (con estado de carga en el botón)
     async function addSchoolWithCode(codigo){
       const name = nameInput.value.trim();
-      if(!name){ alert('Escribe el nombre de la escuela.'); return; }
+      if(!name){ alert('Escribe el nombre de la escuela.'); nameInput.focus(); return; }
+      const prev = addBtn.textContent;
+      addBtn.disabled = true;
+      addBtn.textContent = 'Agregando…';
       try{
         await addDoc(collection(db, `maestros/${codigo}/escuelas`), {
           name,
@@ -267,9 +309,13 @@
           accessCodes: {}
         });
         nameInput.value = '';
+        nameInput.focus();
       }catch(e){
         console.error(e);
         alert('Error al guardar la escuela');
+      }finally{
+        addBtn.disabled = false;
+        addBtn.textContent = prev;
       }
     }
 
@@ -333,6 +379,8 @@
       const selectedNames = selected.map(i => i.dataset.nombre || i.value);
 
       generateCodeBtn.disabled = true;
+      const prev = generateCodeBtn.textContent;
+      generateCodeBtn.textContent = 'Generando…';
       try {
         const code = await generateAccessCodeWithGroups(currentSchoolId, selectedIds, selectedNames, asignadoA);
         closeModal();
@@ -349,17 +397,17 @@
         alert(e?.message || 'No se pudo generar el código.');
       } finally {
         generateCodeBtn.disabled = false;
+        generateCodeBtn.textContent = prev;
       }
     });
 
     // Guardado en Firestore (anidado + accesos globales) incluyendo NOMBRES de grupos
     async function generateAccessCodeWithGroups(schoolId, selectedGroups, selectedGroupNames, asignadoA){
-      // doc de la escuela anidado
       const escRef = doc(db, `maestros/${CURRENT_CODE}/escuelas/${schoolId}`);
       const escSnap = await getDoc(escRef);
       if(!escSnap.exists()) throw new Error('La escuela no existe.');
 
-      // Generar código único (0000-9999) y guardar en colección global 'accesos'
+      // Generar código único (0000-9999) y guardar global
       let code = null;
       for (let i = 0; i < 25; i++){
         const candidate = String(Math.floor(Math.random()*10000)).padStart(4,'0');
@@ -372,7 +420,7 @@
             maestroName: MAESTRO_NAME || null,
             escuelaId: schoolId,
             grupos: selectedGroups,
-            groupNames: selectedGroupNames,       // ← guardamos nombres
+            groupNames: selectedGroupNames,
             asignadoA,
             activo: true,
             createdAt: serverTimestamp()
@@ -382,31 +430,28 @@
       }
       if(!code) throw new Error('No se pudo generar un código único, intenta de nuevo.');
 
-      // Espejo en la escuela para listar chips (con nombres)
+      // Espejo en la escuela para listar chips
       const schoolData = escSnap.data() || {};
       const updatedAccess = {
         ...(schoolData.accessCodes || {}),
         [code]: {
           grupos: selectedGroups,
-          groupNames: selectedGroupNames,        // ← también aquí
+          groupNames: selectedGroupNames,
           asignadoA,
           createdAt: serverTimestamp()
         }
       };
       await updateDoc(escRef, { accessCodes: updatedAccess });
 
-      // Invalida cache para esa escuela (por si cambiaron grupos)
+      // Invalida cache para esa escuela
       delete GROUP_NAME_CACHE[schoolId];
 
       return code;
     }
 
-    // Eliminar código: borra accesos/{code} y lo quita del mapa accessCodes de la escuela
+    // Eliminar código
     async function deleteAccessCode(schoolId, code){
-      // 1) Borrar doc global
       await deleteDoc(doc(db, 'accesos', code));
-
-      // 2) Quitar del mapa de la escuela
       const escRef = doc(db, `maestros/${CURRENT_CODE}/escuelas/${schoolId}`);
       const escSnap = await getDoc(escRef);
       if(escSnap.exists()){
@@ -420,26 +465,28 @@
     // Eventos
     function wireEvents(){
       addBtn.onclick = () => addSchoolWithCode(CURRENT_CODE);
-      nameInput.addEventListener('keyup', e => { if(e.key === 'Enter') addBtn.click(); });
+      nameInput.addEventListener('keydown', e => { if(e.key === 'Enter') addBtn.click(); });
     }
 
     // ==== INICIO ====
     (async function init(){
       CURRENT_CODE = getMaestroCodeFromSession();
       if (!CURRENT_CODE){
-        setSessionInfo(); // mostrará el aviso sin código
+        setSessionInfo();
         addBtn.disabled = true;
         emptyEl.style.display = 'block';
         emptyEl.textContent = 'Regresa a Inicio e ingresa tu CÓDIGO DE MAESTRO.';
         return;
       }
 
-      await ensureMaestroDoc(CURRENT_CODE); // crea doc si falta y lee MAESTRO_NAME
+      await ensureMaestroDoc(CURRENT_CODE);
       setSessionInfo();
 
       addBtn.disabled = false;
       wireEvents();
       subscribeSchoolsForCode(CURRENT_CODE);
+      // Autofocus cuando hay sesión válida
+      nameInput?.focus();
     })();
   </script>
 </body>
