@@ -16,7 +16,7 @@
   .legend{display:flex;gap:12px;align-items:center;font-size:14px;color:#445}
   .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
   .p{background:var(--success)} .t{background:var(--warning)} .a{background:var(--danger)}
-  .attendance-row{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #eee}
+  .attendance-row{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #eee;gap:12px}
   .radio-group{display:flex;gap:8px}
   .radio-group input{display:none}
   .radio-group label{padding:6px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:14px}
@@ -30,6 +30,11 @@
   .login-form input {width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 6px;}
   .add-student {display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:16px;}
   .add-student input {flex:1 1 260px;}
+
+  /* Botón ícono para borrar */
+  .icon-btn{border:1px solid #e5e7eb;background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer}
+  .icon-btn:hover{background:#f8fafc}
+  .icon-btn.danger{border-color:#fca5a5;color:#b91c1c}
 </style>
 </head>
 <body>
@@ -88,7 +93,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import {
-    getFirestore, collection, collectionGroup, getDocs, getDoc, setDoc, doc, serverTimestamp, addDoc
+    getFirestore, collection, collectionGroup, getDocs, getDoc, setDoc, doc, serverTimestamp, addDoc, deleteDoc
   } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
   // ===== Firebase =====
@@ -290,6 +295,7 @@
     }
   }
 
+  // Render con botón de eliminar
   function renderAsis(){
     if(!alumnos.length){ asisList.innerHTML = '<p>No hay alumnos en este grupo.</p>'; return; }
     asisList.innerHTML = '';
@@ -297,7 +303,7 @@
       const row = document.createElement('div');
       row.className = 'attendance-row';
       row.innerHTML = `
-        <div>${a.name}</div>
+        <div style="flex:1;min-width:200px">${a.name}</div>
         <div class="radio-group">
           <input type="radio" name="r-${a.id}" id="rA-${a.id}" ${asistencia[a.id]==='A'?'checked':''}>
           <label for="rA-${a.id}">A</label>
@@ -306,8 +312,11 @@
           <input type="radio" name="r-${a.id}" id="rF-${a.id}" ${asistencia[a.id]==='F'?'checked':''}>
           <label for="rF-${a.id}">F</label>
         </div>
+        <button class="icon-btn danger" data-del="${a.id}" title="Eliminar alumno">🗑️</button>
       `;
       asisList.appendChild(row);
+
+      // listeners A/R/F
       row.querySelector(`#rA-${a.id}`).addEventListener('change',()=>asistencia[a.id]='A');
       row.querySelector(`#rR-${a.id}`).addEventListener('change',()=>asistencia[a.id]='R');
       row.querySelector(`#rF-${a.id}`).addEventListener('change',()=>asistencia[a.id]='F');
@@ -397,6 +406,39 @@
     }catch(e){
       console.error(e);
       showMsg(msg, 'Error al guardar asistencia','err');
+    }
+  });
+
+  // === Eliminar alumno (delegación en la lista) ===
+  asisList.addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('[data-del]');
+    if(!btn) return;
+
+    const id = btn.getAttribute('data-del');
+    const alumno = alumnos.find(x => x.id === id);
+    const nombre = alumno?.name || 'este alumno';
+
+    if(!currentSid || !currentGid || !m){
+      showMsg(msg, 'Primero selecciona un grupo.','err');
+      return;
+    }
+
+    const ok = confirm(`¿Eliminar definitivamente a "${nombre}" `);
+    if(!ok) return;
+
+    try{
+      // 1) Borrar en Firestore
+      await deleteDoc(doc(db, 'maestros', m, 'escuelas', currentSid, 'grupos', currentGid, 'alumnos', id));
+
+      // 2) Actualizar estado local
+      alumnos = alumnos.filter(x => x.id !== id);
+      delete asistencia[id]; // por si estaba marcado en el día actual
+      renderAsis();
+
+      showMsg(msg, 'Alumno eliminado.','ok');
+    }catch(e){
+      console.error('Error eliminando alumno:', e);
+      showMsg(msg, 'No se pudo eliminar el alumno.','err');
     }
   });
 
