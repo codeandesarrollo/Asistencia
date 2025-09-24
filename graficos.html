@@ -18,6 +18,7 @@
   .spacer{flex:1}
   .pill{display:inline-block;padding:6px 10px;border-radius:999px;background:#eaf2ff;color:#1f3b77;font-size:13px}
   .btn{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;font-weight:600;text-decoration:none;cursor:pointer}
+  .btn[disabled]{opacity:.6;cursor:not-allowed}
   .btn-outline{border:1px solid var(--primary);color:var(--primary);background:#fff}
   .btn-primary{background:linear-gradient(135deg,var(--primary),#2E5FAA);color:#fff;border:1px solid transparent}
   .control{padding:10px;border:1px solid #dfe3ea;border-radius:10px;font-size:14px}
@@ -52,7 +53,7 @@
       <div class="spacer"></div>
       <a id="btnBack" class="btn btn-outline" href="#">← Regresar</a>
       <button id="btnRefrescar" class="btn btn-primary">Actualizar</button>
-      <button id="btnExcel" class="btn btn-outline" title="Descargar Excel con datos y gráficas">⬇️ Descargar Excel</button>
+      <button id="btnExcel" class="btn btn-outline" title="Descargar Excel con datos y gráficas" disabled>⬇️ Descargar Excel</button>
     </div>
     <div id="status" class="muted" style="margin-top:8px"></div>
   </div>
@@ -87,7 +88,7 @@
     collectionGroup, getDoc, doc
   } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-  // Firebase
+  // ===== Firebase =====
   const app = initializeApp({
     apiKey: "AIzaSyBEIeZz3HeU-8EVirVx9JAYnGbBegh1Uh4",
     authDomain: "maestros-7faa6.firebaseapp.com",
@@ -99,7 +100,7 @@
   });
   const db  = getFirestore(app);
 
-  // Params
+  // ===== Parámetros =====
   const p = new URLSearchParams(location.search);
   const sid = p.get('sid');
   const gid = p.get('gid');
@@ -109,7 +110,14 @@
   document.getElementById('btnBack').href =
     `opcionesgrupo.html?sid=${encodeURIComponent(sid)}&gid=${encodeURIComponent(gid)}`;
 
-  // Resolver maestro m a partir de sid
+  // ===== Estado de nombres (globales para exportar) =====
+  let escName = sid, gruName = gid;
+
+  // ===== Botón Excel deshabilitado hasta cargar nombres =====
+  const btnExcel = document.getElementById('btnExcel');
+  btnExcel.disabled = true;
+
+  // ===== Resolver maestro m a partir de sid =====
   async function resolveMaestroBySchoolId(sid){
     const cg = await getDocs(collectionGroup(db, 'escuelas'));
     const found = cg.docs.find(d => d.id === sid);
@@ -118,7 +126,7 @@
   let m = await resolveMaestroBySchoolId(sid);
   if(!m){ alert('No se encontró la escuela bajo ningún maestro.'); }
 
-  // 🔹 Cargar nombres legibles de escuela y grupo y mostrarlos en el chip
+  // ===== Cargar nombres legibles y mostrarlos =====
   async function loadCtxNames(){
     try{
       const escRef = doc(db, 'maestros', m, 'escuelas', sid);
@@ -128,31 +136,32 @@
       const escData = escSnap.exists() ? escSnap.data() : {};
       const gruData = gruSnap.exists() ? gruSnap.data() : {};
 
-      const escName = escData.nombre || escData.name || sid;
-      const gruName = gruData.nombre || gruData.name || gid;
+      escName = escData.nombre || escData.name || sid;
+      gruName = gruData.nombre || gruData.name || gid;
 
       ctxEl.textContent = `Escuela: ${escName} · Grupo: ${gruName}`;
     }catch(e){
       console.error('loadCtxNames', e);
       ctxEl.textContent = `Escuela: ${sid} · Grupo: ${gid}`; // fallback
+    }finally{
+      btnExcel.disabled = false; // habilitar exportación
     }
   }
   await loadCtxNames();
 
-  // Controles
+  // ===== Controles =====
   const inputMes = document.getElementById('mes');
   const statusBox = document.getElementById('status');
   const btnRefrescar = document.getElementById('btnRefrescar');
-  const btnExcel = document.getElementById('btnExcel');
 
   const now = new Date();
   inputMes.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
 
-  // Charts refs y estado para exportación
+  // ===== Charts + estado para exportación =====
   let chartDaily, chartMonthly, chartAlumnos;
   let lastAgg = { alumnos:[], byDay:{}, monthlyTotals:{A:0,R:0,F:0}, perAlumno:{}, allDays:[], ym:"" };
 
-  // Helpers
+  // ===== Helpers =====
   function monthRange(ym){
     const [y,m] = ym.split('-').map(Number);
     const last  = new Date(y, m, 0);
@@ -161,7 +170,14 @@
   const fmt = s => s.slice(8,10);
   const COLOR_A='#22c55e', COLOR_R='#f59e0b', COLOR_F='#ef4444';
 
-  // Datos (ANIDADO bajo maestros/{m}…)
+  const safeName = s => (s || '')
+    .toString()
+    .normalize('NFD').replace(/\p{Diacritic}/gu,'')
+    .replace(/[^a-zA-Z0-9 _.-]/g,'')
+    .trim().replace(/\s+/g,'_')
+    .substring(0,60) || 'SIN_NOMBRE';
+
+  // ===== Datos (anidado bajo maestros/{m}) =====
   async function fetchAlumnos(){
     const snap = await getDocs(collection(db,'maestros',m,'escuelas',sid,'grupos',gid,'alumnos'));
     const alumnos = [];
@@ -209,7 +225,7 @@
     return { byDay, monthlyTotals, perAlumno, totalStudents };
   }
 
-  // Render
+  // ===== Render =====
   function renderDailyChart(canvas, byDay){
     const labels = Object.keys(byDay).sort();
     const data = {
@@ -246,14 +262,13 @@
     chartAlumnos = new Chart(canvas.getContext('2d'), { type:'bar', data, options });
   }
 
-  // ✅ Texto con porcentajes sobre registros efectivos (A+R+F)
   function resumeText(totals){
     const sum = (totals.A||0) + (totals.R||0) + (totals.F||0);
     const pct = n => sum ? (n*100/sum).toFixed(1) : '0.0';
     return `Totales del mes · Registros: ${sum} · A: ${totals.A} (${pct(totals.A)}%) · R: ${totals.R} (${pct(totals.R)}%) · F: ${totals.F} (${pct(totals.F)}%)`;
   }
 
-  // Orquestación
+  // ===== Orquestación =====
   async function refresh(){
     try{
       statusBox.textContent = 'Cargando…';
@@ -263,7 +278,7 @@
       const docs = await fetchAsistenciasMes(ym);
       const { byDay, monthlyTotals, perAlumno, totalStudents } = aggregateMonthly(alumnos, docs);
 
-      // Completar días del mes para el chart diario (solo visual)
+      // Completar días del mes para el chart diario
       const [y,mn] = ym.split('-').map(Number);
       const last = new Date(y, mn, 0).getDate();
       const allDays = [];
@@ -276,9 +291,7 @@
       renderMonthlyChart(document.getElementById('chartMonthly'), monthlyTotals);
       renderAlumnosChart(document.getElementById('chartAlumnos'), alumnos, perAlumno);
 
-      // ✅ Texto alineado con la dona
       document.getElementById('resumeText').textContent = resumeText(monthlyTotals);
-
       statusBox.textContent = `Mes ${ym} · Alumnos: ${totalStudents} · Días con registro: ${docs.length}`;
     }catch(err){
       console.error(err);
@@ -287,7 +300,7 @@
     }
   }
 
-  // === Exportación
+  // ===== Exportación =====
   const API_BASE =
     (location.protocol === 'file:' || location.origin === 'null')
       ? 'https://asistencia-sage.vercel.app'
@@ -299,10 +312,29 @@
         alert('No hay datos para exportar. Da clic en “Actualizar” primero.');
         return;
       }
-      const payload = { sid, gid, ym:lastAgg.ym, alumnos:lastAgg.alumnos, allDays:lastAgg.allDays,
-                        byDay:lastAgg.byDay, monthlyTotals:lastAgg.monthlyTotals, perAlumno:lastAgg.perAlumno };
+
+      const payload = {
+        sid, gid,
+        ym: lastAgg.ym,
+        alumnos: lastAgg.alumnos,
+        allDays: lastAgg.allDays,
+        byDay: lastAgg.byDay,
+        monthlyTotals: lastAgg.monthlyTotals,
+        perAlumno: lastAgg.perAlumno,
+        // 👇 nombres legibles
+        schoolName: escName,
+        groupName:  gruName
+      };
+      console.log('[export-excel] payload', payload);
+
       const url = `${API_BASE}/api/export-excel`;
-      const resp = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload), mode:'cors', credentials:'omit' });
+      const resp = await fetch(url, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload),
+        mode:'cors',
+        credentials:'omit'
+      });
       if(!resp.ok){
         const text = await resp.text().catch(()=> '');
         console.error('[export-excel] HTTP', resp.status, text);
@@ -311,8 +343,13 @@
       }
       const blob = await resp.blob();
       const a = document.createElement('a');
+
+      // Nombre de archivo con nombres (saneados)
+      const fnEsc = safeName(escName);
+      const fnGru = safeName(gruName);
       a.href = URL.createObjectURL(blob);
-      a.download = `Asistencia_${sid}_${gid}_${lastAgg.ym}.xlsx`;
+      a.download = `Asistencia_${fnEsc}_${fnGru}_${lastAgg.ym}.xlsx`;
+
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(()=> URL.revokeObjectURL(a.href), 0);
     }catch(err){
@@ -322,7 +359,7 @@
   }
 
   // Eventos
-  btnRefrescar.addEventListener('click', refresh);
+  document.getElementById('btnRefrescar').addEventListener('click', refresh);
   inputMes.addEventListener('change', refresh);
   btnExcel.addEventListener('click', exportExcel);
 
