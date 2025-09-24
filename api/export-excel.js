@@ -36,7 +36,7 @@ export default async function handler(req, res) {
 
     const {
       sid, gid, ym, alumnos, allDays, byDay, monthlyTotals, perAlumno,
-      // ➕ nuevos campos (opcionales)
+      // campos opcionales con nombres legibles
       schoolName, groupName
     } = req.body || {};
 
@@ -89,8 +89,7 @@ export default async function handler(req, res) {
       const shResumen = wb.sheet('Resumen del Mes');
 
       const alumnosCount   = alumnos.length || 0;
-      const diasCalendario = days.length;
-      const marcEsperadas  = diasCalendario * alumnosCount;
+      const diasCalendario = days.length; // si no quieres mostrarlo, borra A6/B6 más abajo
 
       const A = Number(monthlyTotals?.A || 0);
       const R = Number(monthlyTotals?.R || 0);
@@ -98,13 +97,15 @@ export default async function handler(req, res) {
       const regSum = A + R + F;
       const pctVal = (n) => regSum > 0 ? n / regSum : 0;
 
-      // Cabecera informativa (usa nombres legibles)
-      shResumen.cell('A2').value('Mes');                   shResumen.cell('B2').value(ym);
-      shResumen.cell('A3').value('Escuela');               shResumen.cell('B3').value(escName);
-      shResumen.cell('A4').value('Grupo');                 shResumen.cell('B4').value(gruName);
-      shResumen.cell('A5').value('Alumnos');               shResumen.cell('B5').value(alumnosCount);
-      shResumen.cell('A6').value('Días (calendario)');     shResumen.cell('B6').value(diasCalendario);
-      shResumen.cell('A7').value('Marcaciones esperadas'); shResumen.cell('B7').value(marcEsperadas);
+      // Cabecera informativa (sin "Marcaciones esperadas")
+      shResumen.cell('A2').value('Mes');               shResumen.cell('B2').value(ym);
+      shResumen.cell('A3').value('Escuela');           shResumen.cell('B3').value(escName);
+      shResumen.cell('A4').value('Grupo');             shResumen.cell('B4').value(gruName);
+      shResumen.cell('A5').value('Alumnos');           shResumen.cell('B5').value(alumnosCount);
+      shResumen.cell('A6').value('Días (calendario)'); shResumen.cell('B6').value(diasCalendario);
+
+      // Limpia la fila A7/B7 por si la plantilla tenía el texto anterior
+      try { shResumen.cell('A7').value(''); shResumen.cell('B7').value(''); } catch {}
 
       shResumen.cell('A8').value('Métrica');
       shResumen.cell('B8').value('Valor');
@@ -125,13 +126,13 @@ export default async function handler(req, res) {
       shResumen.cell('A10').value('R'); shResumen.cell('B10').value(R);
       shResumen.cell('A11').value('F'); shResumen.cell('B11').value(F);
 
-      // C9:C11 (solo lectura humana)
+      // % lectura humana
       ['C9','C10','C11'].forEach((addr, i) => {
         const val = i === 0 ? pctVal(A) : i === 1 ? pctVal(R) : pctVal(F);
         shResumen.cell(addr).formula(null).value(val).style('numberFormat','0.0%');
       });
 
-      // D9:D11 -> usa estas celdas para el gráfico de dona en la plantilla
+      // % para el gráfico de dona en la plantilla
       shResumen.cell('D8').value('% sobre registros');
       shResumen.cell('D9').value(pctVal(A)).style('numberFormat','0.0%');
       shResumen.cell('D10').value(pctVal(R)).style('numberFormat','0.0%');
@@ -166,7 +167,7 @@ export default async function handler(req, res) {
         });
       } catch { /* opcional */ }
 
-      // (Opcional seguro) Forzar recálculo al abrir — protegido
+      // (Opcional) Forzar recálculo al abrir
       try {
         const node = wb && wb._node;
         const wbXml = node?.xlsx?.workbook || node?.workbook;
@@ -183,11 +184,8 @@ export default async function handler(req, res) {
       const fnGru = safeName(gruName);
 
       res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Cache-Control', 'no-store'); // evita caché
-      res.setHeader(
-        'Content-Disposition',
-        `attachment; filename="Asistencia_${fnEsc}_${fnGru}_${ym}.xlsx"`
-      );
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Content-Disposition', `attachment; filename="Asistencia_${fnEsc}_${fnGru}_${ym}.xlsx"`);
       return res.status(200).send(out);
     } catch (e) {
       return res.status(500).send('WORKBOOK_OUTPUT_FAILED: ' + (e?.message || String(e)));
