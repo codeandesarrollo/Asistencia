@@ -14,7 +14,7 @@ const PRECACHE_URLS = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/maskable-512.png',
-  // SDKs que usas:
+  // SDKs que puede usar tu app
   'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js',
   'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'
 ];
@@ -41,7 +41,7 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
   if (url.origin.includes('firestore.googleapis.com')) return;
 
-  // HTML → network-first (para que veas actualizaciones cuando haya red)
+  // HTML → network-first (ver actualizaciones cuando hay red)
   if (req.headers.get('accept')?.includes('text/html')) {
     event.respondWith(
       fetch(req).then(res => {
@@ -54,7 +54,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Librerías de gstatic → stale-while-revalidate
+  // gstatic → stale-while-revalidate
   if (url.origin.includes('gstatic.com')) {
     event.respondWith(
       caches.match(req).then(cached => {
