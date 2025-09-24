@@ -16,7 +16,26 @@
   .legend{display:flex;gap:12px;align-items:center;font-size:14px;color:#445}
   .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
   .p{background:var(--success)} .t{background:var(--warning)} .a{background:var(--danger)}
-  .attendance-row{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #eee;gap:12px}
+
+  /* antes: justify-content:space-between; ahora dejamos que el gap ordene */
+  .attendance-row{
+    display:flex;
+    align-items:center;
+    padding:12px;
+    border-bottom:1px solid #eee;
+    gap:12px;
+  }
+
+  /* numeración */
+  .num{
+    width:36px;
+    text-align:right;
+    color:#64748b;
+    font-weight:600;
+    font-variant-numeric: tabular-nums;
+    opacity:.9;
+  }
+
   .radio-group{display:flex;gap:8px}
   .radio-group input{display:none}
   .radio-group label{padding:6px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:14px}
@@ -135,7 +154,6 @@
   let m = null; // maestro resuelto
 
   // ===== Helpers =====
-  // Comparador para español (ignora acentos, puntuación y toma números)
   const coll = new Intl.Collator('es', { sensitivity: 'base', ignorePunctuation: true, numeric: true });
 
   const p = new URLSearchParams(location.search);
@@ -153,12 +171,10 @@
     setTimeout(()=>el.style.display='none', 3200);
   }
 
-  // Normaliza para comparar nombres (sin acentos y minúsculas)
   function normalizeName(s=''){
     return s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim();
   }
 
-  // === Resolver m (maestro) a partir de sid ===
   async function resolveMaestroBySchoolId(sid){
     const cg = await getDocs(collectionGroup(db, 'escuelas'));
     const found = cg.docs.find(d => d.id === sid);
@@ -168,12 +184,10 @@
 
   // ==== Flujo de inicio ====
   if (sidParam && gidParam){
-    // Modo admin o “admin con code propagado”
     currentSid = sidParam;
     currentGid = gidParam;
     ctx.textContent = `Escuela: ${currentSid} · Grupo: ${currentGid}`;
 
-    // Back preservando ?code si venía
     btnBack.href = currentCode
       ? `opcionesgrupo.html?sid=${encodeURIComponent(currentSid)}&gid=${encodeURIComponent(currentGid)}&code=${encodeURIComponent(currentCode)}`
       : `opcionesgrupo.html?sid=${encodeURIComponent(currentSid)}&gid=${encodeURIComponent(currentGid)}`;
@@ -182,7 +196,6 @@
     if(!m){ showMsg(msg, 'No se encontró la escuela bajo ningún maestro.', 'err'); }
     else { codeAccessDiv.style.display='none'; attendanceInterface.style.display='block'; await initializeAttendance(); }
   } else {
-    // Acceso por código (aún no validado)
     codeAccessDiv.style.display='block';
     attendanceInterface.style.display='none';
     ctx.textContent = 'Acceso por código';
@@ -202,17 +215,15 @@
       const codeData = codeSnap.data();
       if(!codeData.activo){ showMsg(codeMsg, 'Este código ya no está activo', 'err'); return; }
 
-      currentCode = code; // << guarda el code activo
+      currentCode = code;
       currentSid = codeData.escuelaId;
       allowedGroups = Array.isArray(codeData.grupos) ? codeData.grupos : [];
 
       if(!currentSid || !allowedGroups.length){ showMsg(codeMsg, 'El código no tiene escuela/grupos asignados', 'err'); return; }
 
-      // Resolver maestro y continuar
       m = await resolveMaestroBySchoolId(currentSid);
       if(!m){ showMsg(codeMsg, 'No se encontró la escuela bajo ningún maestro.', 'err'); return; }
 
-      // Mientras está el selector (si hay varios), Back va a lista de grupos permitidos
       btnBack.href = `grupos.html?sid=${encodeURIComponent(currentSid)}&code=${encodeURIComponent(currentCode)}`;
 
       if (allowedGroups.length === 1){
@@ -232,7 +243,6 @@
 
   // Selector de grupo (si hay varios)
   async function showGroupSelector(schoolId, groupIds){
-    // Obtener nombres desde ruta anidada
     const groupsInfo = [];
     for (const gid of groupIds){
       const gref = doc(db, 'maestros', m, 'escuelas', schoolId, 'grupos', gid);
@@ -264,7 +274,6 @@
       const gname = gsnap.exists() ? (gsnap.data().name || groupId) : groupId;
       ctx.textContent = `Escuela: ${schoolId} · Grupo: ${gname}`;
 
-      // Back a opciones del grupo, preservando ?code si existe
       btnBack.href = currentCode
         ? `opcionesgrupo.html?sid=${encodeURIComponent(schoolId)}&gid=${encodeURIComponent(groupId)}&code=${encodeURIComponent(currentCode)}`
         : `opcionesgrupo.html?sid=${encodeURIComponent(schoolId)}&gid=${encodeURIComponent(groupId)}`;
@@ -281,13 +290,13 @@
     await loadAsistenciaForDate(fechaAsis.value || todayStr());
   }
 
-  // === Cargar alumnos (ordenados A–Z en español) ===
+  // === Cargar alumnos (ordenados A–Z) ===
   async function loadAlumnos(){
     alumnos = [];
     try{
       const snap = await getDocs(collection(db, 'maestros', m, 'escuelas', currentSid, 'grupos', currentGid, 'alumnos'));
       snap.forEach(d=> alumnos.push({ id: d.id, name: d.data().name || '' }));
-      alumnos.sort((a, b) => coll.compare(a.name || '', b.name || '')); // ← orden A–Z
+      alumnos.sort((a, b) => coll.compare(a.name || '', b.name || ''));
       renderAsis();
     }catch(e){
       console.error('Error cargando alumnos:', e);
@@ -295,15 +304,19 @@
     }
   }
 
-  // Render con botón de eliminar
+  // === Render con numeración e ícono eliminar ===
   function renderAsis(){
-    if(!alumnos.length){ asisList.innerHTML = '<p>No hay alumnos en este grupo.</p>'; return; }
+    if(!alumnos.length){
+      asisList.innerHTML = '<p>No hay alumnos en este grupo.</p>';
+      return;
+    }
     asisList.innerHTML = '';
-    alumnos.forEach(a=>{
+    alumnos.forEach((a, idx)=>{
       const row = document.createElement('div');
       row.className = 'attendance-row';
       row.innerHTML = `
-        <div style="flex:1;min-width:200px">${a.name}</div>
+        <div class="num">${idx + 1}</div>
+        <div class="alumno-name" style="flex:1;min-width:200px">${a.name}</div>
         <div class="radio-group">
           <input type="radio" name="r-${a.id}" id="rA-${a.id}" ${asistencia[a.id]==='A'?'checked':''}>
           <label for="rA-${a.id}">A</label>
@@ -316,7 +329,6 @@
       `;
       asisList.appendChild(row);
 
-      // listeners A/R/F
       row.querySelector(`#rA-${a.id}`).addEventListener('change',()=>asistencia[a.id]='A');
       row.querySelector(`#rR-${a.id}`).addEventListener('change',()=>asistencia[a.id]='R');
       row.querySelector(`#rF-${a.id}`).addEventListener('change',()=>asistencia[a.id]='F');
@@ -356,27 +368,22 @@
     if(!raw){ showMsg(msg, 'Escribe el nombre del alumno.','err'); return; }
     if(!currentSid || !currentGid || !m){ showMsg(msg, 'Primero selecciona un grupo.','err'); return; }
 
-    // Validar duplicados por nombre (ignorando acentos/mayúsculas)
     const norm = normalizeName(raw);
     const exists = alumnos.some(a => normalizeName(a.name) === norm);
     if(exists){ showMsg(msg, 'Ese alumno ya existe en el grupo.','err'); return; }
 
     try{
-      // Guardar en Firestore
       const colRef = collection(db, 'maestros', m, 'escuelas', currentSid, 'grupos', currentGid, 'alumnos');
       const created = await addDoc(colRef, {
         name: raw,
         createdAt: serverTimestamp()
       });
 
-      // Actualizar estado local, reordenar y re-render
       alumnos.push({ id: created.id, name: raw });
       alumnos.sort((a, b) => coll.compare(a.name || '', b.name || ''));
       renderAsis();
 
-      // Por defecto, marcar A para este nuevo alumno en el día actual seleccionado
       asistencia[created.id] = 'A';
-
       newStudentName.value = '';
       showMsg(msg, 'Alumno agregado correctamente.','ok');
     }catch(e){
@@ -423,17 +430,15 @@
       return;
     }
 
-    const ok = confirm(`¿Eliminar definitivamente a "${nombre}" `);
+    const ok = confirm(`¿Eliminar definitivamente a "${nombre}"?`);
     if(!ok) return;
 
     try{
-      // 1) Borrar en Firestore
       await deleteDoc(doc(db, 'maestros', m, 'escuelas', currentSid, 'grupos', currentGid, 'alumnos', id));
 
-      // 2) Actualizar estado local
       alumnos = alumnos.filter(x => x.id !== id);
-      delete asistencia[id]; // por si estaba marcado en el día actual
-      renderAsis();
+      delete asistencia[id];
+      renderAsis(); // ← reenumera automáticamente
 
       showMsg(msg, 'Alumno eliminado.','ok');
     }catch(e){
