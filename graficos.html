@@ -34,7 +34,7 @@
 <body>
 <header>
   <h1>Gráficos de asistencia</h1>
-  <p id="ctx" class="pill"></p>
+  <p id="ctx" class="pill">Cargando escuela y grupo…</p>
 </header>
 
 <div class="container">
@@ -84,7 +84,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import {
     getFirestore, collection, getDocs, query, where, orderBy,
-    collectionGroup
+    collectionGroup, getDoc, doc
   } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
   // Firebase
@@ -104,8 +104,10 @@
   const sid = p.get('sid');
   const gid = p.get('gid');
   if(!sid || !gid){ alert('Falta sid o gid'); location.href='./escuelas.html'; }
-  document.getElementById('ctx').textContent = `Escuela: ${sid} · Grupo: ${gid}`;
-  document.getElementById('btnBack').href = `opcionesgrupo.html?sid=${encodeURIComponent(sid)}&gid=${encodeURIComponent(gid)}`;
+
+  const ctxEl = document.getElementById('ctx');
+  document.getElementById('btnBack').href =
+    `opcionesgrupo.html?sid=${encodeURIComponent(sid)}&gid=${encodeURIComponent(gid)}`;
 
   // Resolver maestro m a partir de sid
   async function resolveMaestroBySchoolId(sid){
@@ -115,6 +117,27 @@
   }
   let m = await resolveMaestroBySchoolId(sid);
   if(!m){ alert('No se encontró la escuela bajo ningún maestro.'); }
+
+  // 🔹 Cargar nombres legibles de escuela y grupo y mostrarlos en el chip
+  async function loadCtxNames(){
+    try{
+      const escRef = doc(db, 'maestros', m, 'escuelas', sid);
+      const gruRef = doc(db, 'maestros', m, 'escuelas', sid, 'grupos', gid);
+      const [escSnap, gruSnap] = await Promise.all([getDoc(escRef), getDoc(gruRef)]);
+
+      const escData = escSnap.exists() ? escSnap.data() : {};
+      const gruData = gruSnap.exists() ? gruSnap.data() : {};
+
+      const escName = escData.nombre || escData.name || sid;
+      const gruName = gruData.nombre || gruData.name || gid;
+
+      ctxEl.textContent = `Escuela: ${escName} · Grupo: ${gruName}`;
+    }catch(e){
+      console.error('loadCtxNames', e);
+      ctxEl.textContent = `Escuela: ${sid} · Grupo: ${gid}`; // fallback
+    }
+  }
+  await loadCtxNames();
 
   // Controles
   const inputMes = document.getElementById('mes');
@@ -142,7 +165,7 @@
   async function fetchAlumnos(){
     const snap = await getDocs(collection(db,'maestros',m,'escuelas',sid,'grupos',gid,'alumnos'));
     const alumnos = [];
-    snap.forEach(d=> alumnos.push({id:d.id, name:d.data().name||''}));
+    snap.forEach(d=> alumnos.push({id:d.id, name:d.data().name||d.data().nombre||''}));
     return alumnos;
   }
   async function fetchAsistenciasMes(ym){
@@ -222,10 +245,12 @@
     if(chartAlumnos) chartAlumnos.destroy();
     chartAlumnos = new Chart(canvas.getContext('2d'), { type:'bar', data, options });
   }
-  function resumeText(totals, days, students){
-    const totalMarcaciones = days * students;
-    const pct = n => totalMarcaciones ? (n*100/totalMarcaciones).toFixed(1) : '0.0';
-    return `Totales del mes · Marcaciones: ${totalMarcaciones} · A: ${totals.A} (${pct(totals.A)}%) · R: ${totals.R} (${pct(totals.R)}%) · F: ${totals.F} (${pct(totals.F)}%)`;
+
+  // ✅ Texto con porcentajes sobre registros efectivos (A+R+F)
+  function resumeText(totals){
+    const sum = (totals.A||0) + (totals.R||0) + (totals.F||0);
+    const pct = n => sum ? (n*100/sum).toFixed(1) : '0.0';
+    return `Totales del mes · Registros: ${sum} · A: ${totals.A} (${pct(totals.A)}%) · R: ${totals.R} (${pct(totals.R)}%) · F: ${totals.F} (${pct(totals.F)}%)`;
   }
 
   // Orquestación
@@ -238,7 +263,7 @@
       const docs = await fetchAsistenciasMes(ym);
       const { byDay, monthlyTotals, perAlumno, totalStudents } = aggregateMonthly(alumnos, docs);
 
-      // Completar días del mes
+      // Completar días del mes para el chart diario (solo visual)
       const [y,mn] = ym.split('-').map(Number);
       const last = new Date(y, mn, 0).getDate();
       const allDays = [];
@@ -251,8 +276,8 @@
       renderMonthlyChart(document.getElementById('chartMonthly'), monthlyTotals);
       renderAlumnosChart(document.getElementById('chartAlumnos'), alumnos, perAlumno);
 
-      document.getElementById('resumeText').textContent =
-        resumeText(monthlyTotals, Object.keys(byDay).length, totalStudents);
+      // ✅ Texto alineado con la dona
+      document.getElementById('resumeText').textContent = resumeText(monthlyTotals);
 
       statusBox.textContent = `Mes ${ym} · Alumnos: ${totalStudents} · Días con registro: ${docs.length}`;
     }catch(err){
@@ -262,7 +287,7 @@
     }
   }
 
-  // === Exportación (sin cambios)
+  // === Exportación
   const API_BASE =
     (location.protocol === 'file:' || location.origin === 'null')
       ? 'https://asistencia-sage.vercel.app'
@@ -278,7 +303,12 @@
                         byDay:lastAgg.byDay, monthlyTotals:lastAgg.monthlyTotals, perAlumno:lastAgg.perAlumno };
       const url = `${API_BASE}/api/export-excel`;
       const resp = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload), mode:'cors', credentials:'omit' });
-      if(!resp.ok){ const text = await resp.text().catch(()=> ''); console.error('[export-excel] HTTP', resp.status, text); alert(`Error exportando (${resp.status}).`); return; }
+      if(!resp.ok){
+        const text = await resp.text().catch(()=> '');
+        console.error('[export-excel] HTTP', resp.status, text);
+        alert(`Error exportando (${resp.status}).`);
+        return;
+      }
       const blob = await resp.blob();
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
