@@ -5,55 +5,112 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Tomar asistencia</title>
 <style>
-  :root{ --primary:#4A90E2; --success:#28a745; --warning:#ffc107; --danger:#dc3545; }
+  :root{
+    --primary:#4A90E2; --success:#28a745; --warning:#ffc107; --danger:#dc3545;
+    --card:#fff; --txt:#2b2f36; --muted:#64748b; --radius:14px;
+  }
   *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,Segoe UI,Roboto,sans-serif}
-  body{background:#f5f6fb;color:#2b2f36}
-  header{background:linear-gradient(135deg,var(--primary),#2E5FAA);color:#fff;padding:18px 0;text-align:center}
-  .container{max-width:900px;margin:0 auto;padding:22px}
-  .card{background:#fff;border-radius:14px;padding:22px;border:1px solid #e6ebf3;box-shadow:0 6px 18px rgba(0,0,0,.05);margin-top:12px}
-  .row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
-  .form-control{padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px}
-  .legend{display:flex;gap:12px;align-items:center;font-size:14px;color:#445}
-  .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+  html,body{height:100%}
+  body{background:#f5f6fb;color:var(--txt); -webkit-text-size-adjust:100%}
+  header{
+    background:linear-gradient(135deg,var(--primary),#2E5FAA);
+    color:#fff; padding:18px 0; text-align:center
+  }
+  header h1{font-size:clamp(20px,2.6vw,28px); font-weight:800; letter-spacing:.2px}
+  #ctx{opacity:.9; font-size:clamp(12px,1.8vw,14px); margin-top:4px}
+
+  .container{max-width:960px;margin:0 auto;padding:clamp(14px,2vw,24px)}
+  .card{
+    background:var(--card); border-radius:var(--radius);
+    padding:clamp(14px,2.4vw,22px);
+    border:1px solid #e6ebf3; box-shadow:0 6px 18px rgba(0,0,0,.05);
+    margin-top:12px
+  }
+
+  .row{display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px; align-items:flex-end}
+  .form-control{
+    padding:10px;border:1px solid #ddd;border-radius:8px;font-size:16px;min-height:44px
+  }
+  input[type="date"]{width:100%}
+  .legend{display:flex;gap:10px;align-items:center;font-size:13px;color:#445;flex-wrap:wrap;margin-top:6px}
+  .dot{width:10px;height:10px;border-radius:50%;display:inline-block;vertical-align:middle}
   .p{background:var(--success)} .t{background:var(--warning)} .a{background:var(--danger)}
 
-  /* antes: justify-content:space-between; ahora dejamos que el gap ordene */
+  /* --- FILA DE ALUMNO: mobile-first (2 renglones) --- */
   .attendance-row{
-    display:flex;
+    display:grid;
+    grid-template-columns: 2.4ch 1fr auto;
+    grid-template-areas:
+      "num name del"
+      "radios radios radios";
     align-items:center;
     padding:12px;
     border-bottom:1px solid #eee;
-    gap:12px;
+    gap:10px;
   }
+  .num{grid-area:num; text-align:right; color:#64748b; font-weight:700;
+       font-variant-numeric: tabular-nums; opacity:.9}
+  .alumno-name{grid-area:name; min-width:0; overflow-wrap:anywhere}
+  .icon-btn{grid-area:del; border:1px solid #e5e7eb; background:#fff; border-radius:10px;
+            padding:8px 10px; cursor:pointer; min-height:40px}
+  .icon-btn:hover{background:#f8fafc}
+  .icon-btn.danger{border-color:#fca5a5;color:#b91c1c}
 
-  /* numeración */
-  .num{
-    width:36px;
-    text-align:right;
-    color:#64748b;
-    font-weight:600;
-    font-variant-numeric: tabular-nums;
-    opacity:.9;
+  .radio-group{
+    grid-area:radios;
+    display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; width:100%
   }
-
-  .radio-group{display:flex;gap:8px}
   .radio-group input{display:none}
-  .radio-group label{padding:6px 12px;border:1px solid #ccc;border-radius:6px;cursor:pointer;font-size:14px}
-  .radio-group input:checked+label{background:var(--primary);color:#fff;border-color:var(--primary)}
-  .btn{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--primary),#2E5FAA);color:#fff;text-decoration:none;padding:10px 16px;border-radius:10px;font-weight:600;border:none;cursor:pointer}
-  .btn-outline{background:transparent;color:var(--primary);border:1px solid var(--primary)}
+  .radio-group label{
+    display:flex; align-items:center; justify-content:center;
+    padding:10px 12px; border:1px solid #cfd3da; border-radius:10px;
+    cursor:pointer; font-size:16px; min-height:44px; user-select:none
+  }
+  .radio-group input:checked+label{background:var(--primary); color:#fff; border-color:var(--primary); box-shadow:0 2px 6px rgba(14,111,255,.18)}
+
+  /* --- Botones --- */
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    background:linear-gradient(135deg,var(--primary),#2E5FAA);
+    color:#fff; text-decoration:none; padding:10px 16px; border-radius:10px;
+    font-weight:700; border:none; cursor:pointer; min-height:44px
+  }
+  .btn-outline{background:transparent;color:var(--primary)!important;border:1px solid var(--primary)}
   .msg{margin-top:12px;padding:10px;border-radius:8px;font-size:14px}
   .ok{background:#d4edda;color:#155724;border:1px solid #c3e6cb}
   .err{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb}
-  .login-form {max-width: 420px; margin: 40px auto; padding: 20px; background: white; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);}
-  .login-form input {width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 6px;}
-  .add-student {display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:16px;}
-  .add-student input {flex:1 1 260px;}
+  .login-form {max-width: 520px; margin: 20px auto; padding: 20px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);}
+  .login-form input {width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 8px; font-size:16px}
 
-  /* Botón ícono para borrar */
-  .icon-btn{border:1px solid #e5e7eb;background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer}
-  .icon-btn:hover{background:#f8fafc}
-  .icon-btn.danger{border-color:#fca5a5;color:#b91c1c}
+  .add-student{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:16px}
+  .add-student input{flex:1 1 260px}
+  .actions{display:flex; gap:8px; flex-wrap:wrap}
+
+  /* --- Responsivo --- */
+  @media (min-width:700px){
+    /* En desktop, la fila queda en una sola línea */
+    .attendance-row{
+      grid-template-columns: 36px 1fr auto auto;
+      grid-template-areas: "num name radios del";
+      align-items:center
+    }
+    .radio-group{display:flex; gap:8px; width:auto}
+    .radio-group label{min-width:48px}
+  }
+
+  @media (max-width:640px){
+    .actions{flex-direction:column}
+    .actions .btn,
+    .add-student .btn{width:100%}
+    .add-student{flex-direction:column; align-items:stretch}
+    .row > div{flex:1 1 100%}
+    .btn-outline.btn{order:3} /* el botón Regresar se va abajo si no cabe */
+  }
+
+  @media (prefers-reduced-motion:no-preference){
+    .btn, .radio-group label{transition:transform .06s ease, box-shadow .12s ease}
+    .btn:active, .radio-group label:active{transform:translateY(1px)}
+  }
 </style>
 </head>
 <body>
@@ -65,22 +122,22 @@
 <div class="container">
   <!-- Acceso por código -->
   <div id="codeAccess" class="card login-form" style="display:none;">
-    <h2>Acceso por código</h2>
+    <h2 style="font-size:clamp(18px,2.2vw,22px);margin-bottom:10px">Acceso por código</h2>
     <input id="accessCode" class="form-control" placeholder="Ingresa el código de acceso">
-    <button id="btnAccess" class="btn">Acceder</button>
+    <button id="btnAccess" class="btn" style="width:100%">Acceder</button>
     <div id="codeMsg" class="msg" style="display:none; margin-top:12px"></div>
   </div>
 
   <!-- Interfaz principal -->
   <div id="attendanceInterface" class="card" style="display:none;">
     <div class="row">
-      <div>
-        <label for="fechaAsis">Fecha:</label>
+      <div style="flex:1 1 260px">
+        <label for="fechaAsis" style="display:block; margin-bottom:6px; font-weight:600; color:#374151">Fecha</label>
         <input id="fechaAsis" type="date" class="form-control"/>
-        <div class="legend" style="margin-top:6px">
-          <span class="dot p"></span> A = Asistencia &nbsp;&nbsp;
-          <span class="dot t"></span> R = Retardo &nbsp;&nbsp;
-          <span class="dot a"></span> F = Falta
+        <div class="legend">
+          <span><span class="dot p"></span> A = Asistencia</span>
+          <span><span class="dot t"></span> R = Retardo</span>
+          <span><span class="dot a"></span> F = Falta</span>
         </div>
       </div>
       <div style="margin-left:auto">
@@ -89,9 +146,9 @@
     </div>
 
     <!-- Acciones rápidas -->
-    <div style="margin-top:0;display:flex;gap:8px;flex-wrap:wrap">
+    <div class="actions" style="margin-top:0">
       <button id="markAllA" class="btn">✓ Todos A (asistencia)</button>
-      <button id="markAllF" class="btn-outline btn">✗ Todos F (falta)</button>
+      <button id="markAllF" class="btn btn-outline">✗ Todos F (falta)</button>
       <button id="saveAsis" class="btn" style="margin-left:auto">💾 Guardar asistencia</button>
     </div>
 
@@ -250,8 +307,8 @@
       groupsInfo.push({ id: gid, name: gsnap.exists() ? (gsnap.data().name || gid) : gid });
     }
     asisList.innerHTML = `
-      <h3>Selecciona un grupo:</h3>
-      <div style="display:flex; flex-direction:column; gap:10px; margin-top:15px;">
+      <h3 style="margin:8px 0 2px;font-size:18px">Selecciona un grupo:</h3>
+      <div style="display:flex; flex-direction:column; gap:10px; margin-top:10px;">
         ${groupsInfo.map(g=>`
           <button class="btn" data-g="${g.id}">${g.name}</button>
         `).join('')}
@@ -316,14 +373,14 @@
       row.className = 'attendance-row';
       row.innerHTML = `
         <div class="num">${idx + 1}</div>
-        <div class="alumno-name" style="flex:1;min-width:200px">${a.name}</div>
+        <div class="alumno-name">${a.name}</div>
         <div class="radio-group">
           <input type="radio" name="r-${a.id}" id="rA-${a.id}" ${asistencia[a.id]==='A'?'checked':''}>
-          <label for="rA-${a.id}">A</label>
+          <label for="rA-${a.id}" title="Asistencia">A</label>
           <input type="radio" name="r-${a.id}" id="rR-${a.id}" ${asistencia[a.id]==='R'?'checked':''}>
-          <label for="rR-${a.id}">R</label>
+          <label for="rR-${a.id}" title="Retardo">R</label>
           <input type="radio" name="r-${a.id}" id="rF-${a.id}" ${asistencia[a.id]==='F'?'checked':''}>
-          <label for="rF-${a.id}">F</label>
+          <label for="rF-${a.id}" title="Falta">F</label>
         </div>
         <button class="icon-btn danger" data-del="${a.id}" title="Eliminar alumno">🗑️</button>
       `;
