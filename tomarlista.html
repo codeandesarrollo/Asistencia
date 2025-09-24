@@ -17,7 +17,7 @@
     color:#fff; padding:18px 0; text-align:center
   }
   header h1{font-size:clamp(20px,2.6vw,28px); font-weight:800; letter-spacing:.2px}
-  #ctx{opacity:.9; font-size:clamp(12px,1.8vw,14px); margin-top:4px}
+  #ctx{opacity:.95; font-size:clamp(12px,1.8vw,14px); margin-top:6px}
 
   .container{max-width:960px;margin:0 auto;padding:clamp(14px,2vw,24px)}
   .card{
@@ -84,11 +84,26 @@
 
   .add-student{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:16px}
   .add-student input{flex:1 1 260px}
+
+  /* Compactar SOLO el input de "Agregar alumno" */
+  .add-student .form-control{
+    height:36px;
+    min-height:36px;
+    padding:6px 10px;
+    font-size:14px;
+    line-height:1.2;
+    border-radius:8px;
+  }
+  .add-student .btn{
+    min-height:40px;
+    padding:8px 12px;
+    font-size:15px;
+  }
+
   .actions{display:flex; gap:8px; flex-wrap:wrap}
 
   /* --- Responsivo --- */
   @media (min-width:700px){
-    /* En desktop, la fila queda en una sola línea */
     .attendance-row{
       grid-template-columns: 36px 1fr auto auto;
       grid-template-areas: "num name radios del";
@@ -104,14 +119,82 @@
     .add-student .btn{width:100%}
     .add-student{flex-direction:column; align-items:stretch}
     .row > div{flex:1 1 100%}
-    .btn-outline.btn{order:3} /* el botón Regresar se va abajo si no cabe */
+    .btn-outline.btn{order:3}
+  }
+
+  @media (max-width:480px){
+    .add-student .form-control{
+      height:34px;
+      min-height:34px;
+      padding:6px 10px;
+      font-size:13.5px;
+    }
   }
 
   @media (prefers-reduced-motion:no-preference){
     .btn, .radio-group label{transition:transform .06s ease, box-shadow .12s ease}
     .btn:active, .radio-group label:active{transform:translateY(1px)}
   }
+
+  /* ====== OVERRIDE FINAL (gana a Bootstrap, etc.) ====== */
+  .add-student input.form-control[type="text"]{
+    box-sizing: border-box !important;
+    display: block !important;
+    height: 32px !important;
+    min-height: 32px !important;
+    padding: 4px 10px !important;
+    font-size: 14px !important;
+    line-height: 20px !important;
+    border-radius: 8px !important;
+    -webkit-appearance: none !important;
+    appearance: none !important;
+  }
+  @media (max-width:480px){
+    .add-student input.form-control[type="text"]{
+      height: 30px !important;
+      min-height: 30px !important;
+      padding: 4px 8px !important;
+      font-size: 13.5px !important;
+      line-height: 18px !important;
+    }
+  }
+  .add-student input.form-control[type="text"]:focus{
+    outline: none !important;
+    box-shadow: 0 0 0 3px rgba(74,144,226,.25) !important;
+    border-color: #7aaef0 !important;
+  }
+  /* Fuerza compacto SOLO en Agregar alumno, sea input o textarea */
+.add-student #newStudentName{
+  box-sizing: border-box !important;
+  display: block !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  max-height: 32px !important;
+  padding: 4px 10px !important;
+  font-size: 14px !important;
+  line-height: 20px !important;
+  border-radius: 8px !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  resize: none !important;          /* si fuera textarea */
+  overflow: hidden !important;       /* si fuera textarea */
+}
+
+@media (max-width:480px){
+  .add-student #newStudentName{
+    height: 30px !important;
+    min-height: 30px !important;
+    max-height: 30px !important;
+    padding: 4px 8px !important;
+    font-size: 13.5px !important;
+    line-height: 18px !important;
+  }
+}
+
 </style>
+
+
+
 </head>
 <body>
 <header>
@@ -154,7 +237,7 @@
 
     <!-- Agregar alumno manual -->
     <div class="add-student">
-      <input id="newStudentName" class="form-control" placeholder="Nombre del alumno (p. ej. Juan Pérez)"/>
+      <input id="newStudentName" type="text" class="form-control" placeholder="Nombre del alumno (p. ej. Juan Pérez)"/>
       <button id="addStudentBtn" class="btn">➕ Agregar alumno</button>
     </div>
 
@@ -209,6 +292,9 @@
   let allowedGroups = [];
   let currentCode = null; // << mantiene el ?code activo
   let m = null; // maestro resuelto
+  // Nombres legibles
+  let currentSchoolName = null;
+  let currentGroupName  = null;
 
   // ===== Helpers =====
   const coll = new Intl.Collator('es', { sensitivity: 'base', ignorePunctuation: true, numeric: true });
@@ -239,19 +325,55 @@
     return found.ref.parent.parent?.id || null; // maestros/{m}
   }
 
+  // === Helpers de nombres y encabezado ===
+  async function fetchSchoolName(sid){
+    if (!sid) return sid;
+    const sref  = doc(db, 'maestros', m, 'escuelas', sid);
+    const ssnap = await getDoc(sref);
+    currentSchoolName = ssnap.exists()
+      ? (ssnap.data().name || ssnap.data().nombre || sid)
+      : sid;
+    return currentSchoolName;
+  }
+
+  async function fetchGroupName(sid, gid){
+    if (!sid || !gid) return gid;
+    const gref  = doc(db, 'maestros', m, 'escuelas', sid, 'grupos', gid);
+    const gsnap = await getDoc(gref);
+    currentGroupName = gsnap.exists()
+      ? (gsnap.data().name || gsnap.data().nombre || gid)
+      : gid;
+    return currentGroupName;
+  }
+
+  function updateCtx(extra=''){
+    const s = currentSchoolName || currentSid || '';
+    const g = currentGroupName  || currentGid || '';
+    ctx.textContent = (s && g) ? `Escuela: ${s} · Grupo: ${g}${extra}` :
+                      s ? `Escuela: ${s}${extra}` :
+                      extra ? extra.replace(/^ · /,'') : '';
+  }
+
   // ==== Flujo de inicio ====
   if (sidParam && gidParam){
     currentSid = sidParam;
     currentGid = gidParam;
-    ctx.textContent = `Escuela: ${currentSid} · Grupo: ${currentGid}`;
 
     btnBack.href = currentCode
       ? `opcionesgrupo.html?sid=${encodeURIComponent(currentSid)}&gid=${encodeURIComponent(currentGid)}&code=${encodeURIComponent(currentCode)}`
       : `opcionesgrupo.html?sid=${encodeURIComponent(currentSid)}&gid=${encodeURIComponent(currentGid)}`;
 
     m = await resolveMaestroBySchoolId(currentSid);
-    if(!m){ showMsg(msg, 'No se encontró la escuela bajo ningún maestro.', 'err'); }
-    else { codeAccessDiv.style.display='none'; attendanceInterface.style.display='block'; await initializeAttendance(); }
+    if(!m){
+      showMsg(msg, 'No se encontró la escuela bajo ningún maestro.', 'err');
+    } else {
+      await fetchSchoolName(currentSid);
+      await fetchGroupName(currentSid, currentGid);
+      updateCtx();
+      codeAccessDiv.style.display='none';
+      attendanceInterface.style.display='block';
+      await initializeAttendance();
+    }
   } else {
     codeAccessDiv.style.display='block';
     attendanceInterface.style.display='none';
@@ -280,6 +402,10 @@
 
       m = await resolveMaestroBySchoolId(currentSid);
       if(!m){ showMsg(codeMsg, 'No se encontró la escuela bajo ningún maestro.', 'err'); return; }
+
+      // NOMBRE DE ESCUELA PARA EL HEADER
+      await fetchSchoolName(currentSid);
+      updateCtx();
 
       btnBack.href = `grupos.html?sid=${encodeURIComponent(currentSid)}&code=${encodeURIComponent(currentCode)}`;
 
@@ -320,16 +446,15 @@
         await loadGroupInfo(currentSid, currentGid);
       });
     });
-    ctx.textContent = `Escuela: ${schoolId} · Selecciona grupo`;
+    updateCtx(' · Selecciona grupo');
   }
 
   // Cargar nombre y preparar interfaz para un grupo
   async function loadGroupInfo(schoolId, groupId){
     try{
-      const gref = doc(db, 'maestros', m, 'escuelas', schoolId, 'grupos', groupId);
-      const gsnap = await getDoc(gref);
-      const gname = gsnap.exists() ? (gsnap.data().name || groupId) : groupId;
-      ctx.textContent = `Escuela: ${schoolId} · Grupo: ${gname}`;
+      if (!currentSchoolName) await fetchSchoolName(schoolId);
+      await fetchGroupName(schoolId, groupId);
+      updateCtx();
 
       btnBack.href = currentCode
         ? `opcionesgrupo.html?sid=${encodeURIComponent(schoolId)}&gid=${encodeURIComponent(groupId)}&code=${encodeURIComponent(currentCode)}`
