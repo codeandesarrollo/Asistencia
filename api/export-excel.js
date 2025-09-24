@@ -100,7 +100,7 @@ export default async function handler(req, res) {
         shResumen.cell('C8').value('% sobre registros');
       }
 
-      // Marca para verificar que esta versión corrió y qué plantilla cargó
+      // (marca de depuración útil para confirmar plantilla y ruta)
       shResumen.cell('E2').value(`TPL: asistencia_template_v2.xlsx • ROUTE:/api/export-excel`);
 
       // Valores A/R/F
@@ -108,13 +108,13 @@ export default async function handler(req, res) {
       shResumen.cell('A10').value('R'); shResumen.cell('B10').value(R);
       shResumen.cell('A11').value('F'); shResumen.cell('B11').value(F);
 
-      // C9:C11 (lectura humana, no dependas del gráfico aquí)
+      // C9:C11 (solo lectura humana)
       ['C9','C10','C11'].forEach((addr, i) => {
         const val = i === 0 ? pctVal(A) : i === 1 ? pctVal(R) : pctVal(F);
         shResumen.cell(addr).formula(null).value(val).style('numberFormat','0.0%');
       });
 
-      // D9:D11 -> estos son los que debe usar la dona de la plantilla
+      // D9:D11 -> usa estas celdas para el gráfico de dona en la plantilla
       shResumen.cell('D8').value('% sobre registros');
       shResumen.cell('D9').value(pctVal(A)).style('numberFormat','0.0%');
       shResumen.cell('D10').value(pctVal(R)).style('numberFormat','0.0%');
@@ -140,8 +140,12 @@ export default async function handler(req, res) {
         r2++;
       }
 
-      // Re-cálculo completo al abrir (por si Excel está en cálculo manual)
-      wb._node.workbook.calcPr = { $: { calcId: '0', fullCalcOnLoad: '1' } };
+      // (Opcional seguro) Forzar recálculo al abrir — protegido
+      try {
+        const node = wb && wb._node;
+        const wbXml = node?.xlsx?.workbook || node?.workbook;
+        if (wbXml) wbXml.calcPr = { $: { calcId: '0', fullCalcOnLoad: '1' } };
+      } catch { /* ignorar */ }
 
     } catch (e) {
       return res.status(500).send('WRITE_SHEETS_FAILED: ' + (e?.message || String(e)));
