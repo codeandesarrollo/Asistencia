@@ -15,6 +15,17 @@ function cors(res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 }
 
+// Sanea nombres para usarlos en el filename
+function safeName(s) {
+  return (s || '')
+    .toString()
+    .normalize('NFD').replace(/\p{Diacritic}/gu, '') // quita acentos
+    .replace(/[^a-zA-Z0-9 _.-]/g, '')               // quita raros
+    .trim()
+    .replace(/\s+/g, '_')                            // espacios -> _
+    .substring(0, 60) || 'SIN_NOMBRE';
+}
+
 export default async function handler(req, res) {
   try {
     cors(res);
@@ -23,11 +34,20 @@ export default async function handler(req, res) {
     if (req.method === 'GET') return res.status(200).send('export-excel ok'); // healthcheck
     if (req.method !== 'POST') return res.status(405).send('METHOD_NOT_ALLOWED');
 
-    const { sid, gid, ym, alumnos, allDays, byDay, monthlyTotals, perAlumno } = req.body || {};
+    const {
+      sid, gid, ym, alumnos, allDays, byDay, monthlyTotals, perAlumno,
+      // ➕ nuevos campos (opcionales)
+      schoolName, groupName
+    } = req.body || {};
+
     if (!sid || !gid || !ym) return res.status(400).send('BAD_REQUEST: faltan sid/gid/ym');
     if (!Array.isArray(alumnos) || !Array.isArray(allDays) || !byDay || !monthlyTotals || !perAlumno) {
       return res.status(400).send('BAD_REQUEST: estructura de datos inválida');
     }
+
+    // Nombres legibles (fallback a IDs si no llegan)
+    const escName = (schoolName && String(schoolName).trim()) || sid;
+    const gruName = (groupName && String(groupName).trim()) || gid;
 
     // === Plantilla ===
     const tplPath = path.join(process.cwd(), 'templates', 'asistencia_template_v2.xlsx');
@@ -78,10 +98,10 @@ export default async function handler(req, res) {
       const regSum = A + R + F;
       const pctVal = (n) => regSum > 0 ? n / regSum : 0;
 
-      // Cabecera informativa
+      // Cabecera informativa (usa nombres legibles)
       shResumen.cell('A2').value('Mes');                   shResumen.cell('B2').value(ym);
-      shResumen.cell('A3').value('Escuela');               shResumen.cell('B3').value(sid);
-      shResumen.cell('A4').value('Grupo');                 shResumen.cell('B4').value(gid);
+      shResumen.cell('A3').value('Escuela');               shResumen.cell('B3').value(escName);
+      shResumen.cell('A4').value('Grupo');                 shResumen.cell('B4').value(gruName);
       shResumen.cell('A5').value('Alumnos');               shResumen.cell('B5').value(alumnosCount);
       shResumen.cell('A6').value('Días (calendario)');     shResumen.cell('B6').value(diasCalendario);
       shResumen.cell('A7').value('Marcaciones esperadas'); shResumen.cell('B7').value(marcEsperadas);
@@ -99,9 +119,6 @@ export default async function handler(req, res) {
       } catch {
         shResumen.cell('C8').value('% sobre registros');
       }
-
-      // (marca de depuración útil para confirmar plantilla y ruta)
-      shResumen.cell('E2').value(`TPL: asistencia_template_v2.xlsx • ROUTE:/api/export-excel`);
 
       // Valores A/R/F
       shResumen.cell('A9').value('A');  shResumen.cell('B9').value(A);
@@ -140,6 +157,15 @@ export default async function handler(req, res) {
         r2++;
       }
 
+      // (Opcional) Propiedades del libro, usando nombres legibles
+      try {
+        wb.properties({
+          title: `Asistencia ${escName} - ${gruName} (${ym})`,
+          subject: 'Asistencia mensual',
+          company: 'Asistencia-SAGE'
+        });
+      } catch { /* opcional */ }
+
       // (Opcional seguro) Forzar recálculo al abrir — protegido
       try {
         const node = wb && wb._node;
@@ -153,9 +179,15 @@ export default async function handler(req, res) {
 
     try {
       const out = await wb.outputAsync();
+      const fnEsc = safeName(escName);
+      const fnGru = safeName(gruName);
+
       res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Cache-Control', 'no-store'); // evita caché
-      res.setHeader('Content-Disposition', `attachment; filename="Asistencia_${sid}_${gid}_${ym}_OA.xlsx"`);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="Asistencia_${fnEsc}_${fnGru}_${ym}.xlsx"`
+      );
       return res.status(200).send(out);
     } catch (e) {
       return res.status(500).send('WORKBOOK_OUTPUT_FAILED: ' + (e?.message || String(e)));
