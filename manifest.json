@@ -1,0 +1,16 @@
+{
+  "name": "Control de Asistencia",
+  "short_name": "Asistencia",
+  "description": "Ingreso por código y acceso a escuelas y grupos. PWA con soporte offline.",
+  "lang": "es-MX",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f5f5",
+  "theme_color": "#4A90E2",
+  "icons": [
+    { "src": "icons/icon-192.png",     "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png",     "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

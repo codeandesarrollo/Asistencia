@@ -4,6 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Control de Asistencia · Inicio</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#4A90E2">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
   <style>
     :root{
       --primary:#4A90E2; --primary-2:#2E5FAA;
@@ -27,27 +35,20 @@
       box-shadow:0 6px 18px rgba(0,0,0,.05); border:1px solid #e9eef6;
     }
 
-    /* Campos y grid para alinear input + botón */
     label{ font-size:14px; color:#111827; font-weight:600; display:block; margin-bottom:8px; }
     .form-grid{
-      display:grid;
-      grid-template-columns: 1fr auto; /* input toma todo, botón solo su ancho */
-      gap:12px; align-items:end;
+      display:grid; grid-template-columns: 1fr auto; gap:12px; align-items:end;
     }
-    @media (max-width: 520px){
-      .form-grid{ grid-template-columns: 1fr; }
-    }
+    @media (max-width: 520px){ .form-grid{ grid-template-columns: 1fr; } }
 
     input{
       width:100%; padding:12px 14px; border:1px solid #d1d5db; border-radius:10px; font-size:15px;
       transition:border-color .2s, box-shadow .2s, background .2s;
-      height:44px; /* igual que el botón */
-      background:#fafafa;
+      height:44px; background:#fafafa;
     }
     input:focus{
       outline:none; border-color:var(--primary);
-      box-shadow:0 0 0 3px rgba(74,144,226,.25);
-      background:#fff;
+      box-shadow:0 0 0 3px rgba(74,144,226,.25); background:#fff;
     }
 
     .btn{
@@ -63,30 +64,35 @@
     .btn[aria-disabled="true"]{ opacity:.6; pointer-events:none; }
     .btn:disabled{ opacity:.7; cursor:not-allowed; box-shadow:none; }
 
-    /* Botón secundario */
     .btn-secondary{
       background:linear-gradient(135deg,#6c757d,#5a6268);
       box-shadow:0 6px 14px rgba(108,117,125,.22);
-      width:100%;
-      margin-top:10px;
+      width:100%; margin-top:10px;
     }
 
-    /* Hints y errores ocupan todo el ancho del grid */
     .hint{ color:var(--muted); font-size:13px; margin-top:6px; }
     .status-error{ color:var(--danger); margin-top:8px; font-weight:600; }
     .hidden { display:none; }
 
-    /* Botones fuera del card (abajo) */
-    .actions{
-      margin-top:18px; display:flex; flex-direction:column; gap:10px;
-    }
+    .actions{ margin-top:18px; display:flex; flex-direction:column; gap:10px; }
     .actions .btn{ width:100%; }
+
+    /* Barra superior con botón instalar */
+    .topbar {
+      position:sticky; top:0; z-index:20; background:var(--bg);
+      padding:8px 22px; display:flex; justify-content:flex-end; gap:8px;
+    }
   </style>
 </head>
 <body>
   <header>
     <h1>Control de Asistencia</h1>
   </header>
+
+  <!-- Botón Instalar (se muestra cuando el navegador dispare beforeinstallprompt) -->
+  <div class="topbar">
+    <button id="btnInstall" class="btn" style="display:none">📲 Instalar app</button>
+  </div>
 
   <div class="container">
     <!-- Bienvenida -->
@@ -99,13 +105,9 @@
     <!-- Ingreso de código -->
     <div class="card" id="codigoCard">
       <label for="codigo">Código</label>
-
-      <!-- Grid: input + botón alineados -->
       <div class="form-grid">
         <input id="codigo" placeholder="Escribe tu código aquí" autocomplete="one-time-code" />
         <button id="btnValidar" class="btn">Validar código</button>
-
-        <!-- Estos elementos ocupan el ancho completo del grid -->
         <div class="hint">
           • Si es <b>código de escuela</b> te enviará a <b>Grupos</b> y ahí verás <i>solo tus grupos</i>.<br>
           • Si es <b>código de maestro</b> podrás administrar <i>solo tus</i> escuelas.
@@ -124,7 +126,7 @@
   <!-- Firebase + Firestore -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { getFirestore, doc, getDoc, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyBEIeZz3HeU-8EVirVx9JAYnGbBegh1Uh4",
@@ -138,6 +140,14 @@
 
     const app = initializeApp(firebaseConfig);
     const db  = getFirestore(app);
+
+    // Firestore offline (opcional pero recomendado)
+    try {
+      await enableIndexedDbPersistence(db);
+      console.log('Firestore offline OK');
+    } catch (e) {
+      console.warn('Firestore offline no habilitado:', e);
+    }
 
     const codigoInput   = document.getElementById("codigo");
     const btnValidar    = document.getElementById("btnValidar");
@@ -160,7 +170,6 @@
         btnSalir.classList.remove("hidden");
         codigoCard.classList.add("hidden");
       }
-      // Autofocus si no hay sesión
       if(!maestroCode) codigoInput?.focus();
     })();
 
@@ -176,13 +185,12 @@
         return;
       }
 
-      // Estado de carga mínimo en el botón
       const originalText = btnValidar.textContent;
       btnValidar.disabled = true;
       btnValidar.textContent = "Validando…";
 
       try{
-        // 1) ¿Código de escuela? (accesos)
+        // 1) Código de escuela (colección 'accesos')
         const accSnap = await getDoc(doc(db,"accesos", codigo));
         if (accSnap.exists()){
           const acc = accSnap.data() || {};
@@ -197,19 +205,16 @@
             sessionStorage.removeItem('maestroCode');
             sessionStorage.removeItem('maestroNombre');
             sessionStorage.setItem('accesoCode', codigo);
-
-            // **NUEVO FLUJO**: SIEMPRE manda a grupos
             window.location.href = `./grupos.html?sid=${encodeURIComponent(acc.escuelaId)}&code=${encodeURIComponent(codigo)}`;
             return;
           }
         }
 
-        // 2) ¿Código de maestro?
+        // 2) Código de maestro
         const maestroSnap = await getDoc(doc(db, "maestros", codigo));
         if (maestroSnap.exists()){
           const maestro = maestroSnap.data() || {};
           const nombre  = maestro.nombre || "Maestro";
-
           sessionStorage.setItem('maestroCode', codigo);
           sessionStorage.setItem('maestroNombre', nombre);
           sessionStorage.removeItem('accesoCode');
@@ -246,7 +251,6 @@
       codigoCard.classList.remove("hidden");
       codigoInput.value = "";
       codigoInput.focus();
-
       sessionStorage.removeItem('accesoCode');
       sessionStorage.removeItem('maestroCode');
       sessionStorage.removeItem('maestroNombre');
@@ -255,6 +259,39 @@
     btnValidar.addEventListener("click", validarCodigo);
     codigoInput.addEventListener("keydown", e => { if(e.key==="Enter") validarCodigo(); });
     btnSalir.addEventListener("click", salir);
+
+    // === Botón "Instalar app" (A2HS) ===
+    let deferredPrompt = null;
+    const btnInstall = document.getElementById('btnInstall');
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();        // Evita el mini-infobar
+      deferredPrompt = e;        // Guarda el evento para usarlo luego
+      if (btnInstall) btnInstall.style.display = 'inline-flex';
+    });
+
+    btnInstall?.addEventListener('click', async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();   // Lanza el prompt nativo
+      const choice = await deferredPrompt.userChoice;
+      console.log('A2HS:', choice.outcome); // accepted / dismissed
+      deferredPrompt = null;
+      btnInstall.style.display = 'none';
+    });
+
+    window.addEventListener('appinstalled', () => {
+      console.log('App instalada');
+      if (btnInstall) btnInstall.style.display = 'none';
+    });
+
+    // === Registro del Service Worker ===
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js', { scope: './' })
+          .then(reg => console.log('SW registrado:', reg.scope))
+          .catch(err => console.warn('SW error:', err));
+      });
+    }
   </script>
 </body>
 </html>
